@@ -424,7 +424,7 @@
       itemsList.innerHTML = items.map((item, idx) => {
         const meta = [item.type, item.provider, item.expiryDate ? `Expires ${item.expiryDate}` : ""].filter(Boolean).join(" · ");
         const needsDateForm = item.status === "NEEDS_DATE" ? `
-          <form class="inline-form" onsubmit="submitManualDate(event, '${esc(item.itemId)}', '${esc(item.name)}')">
+          <form class="inline-form" onsubmit="submitManualDate(event, currentItems[${idx}].itemId, currentItems[${idx}].name)">
             <input type="date" required aria-label="Expiry date">
             <button type="submit">Save Date</button>
           </form>
@@ -445,7 +445,7 @@
             ${needsDateForm}
             <div class="row">
               ${calendarBtns}
-              <button type="button" class="danger" onclick="stopReminders(this, '${esc(item.itemId)}')">Stop reminders</button>
+              <button type="button" class="danger" onclick="stopReminders(this, currentItems[${idx}].itemId)">Stop reminders</button>
             </div>
           </div>
         `;
