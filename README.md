@@ -22,7 +22,7 @@ Built for the **AWS Weekend Challenge: "No Pipeline, No Problem"**.
 2. Build and deploy to LocalStack (`LocalMode=true` uses a deterministic extractor instead of Bedrock, and `DemoMode=true` shortens waits to 60–90 seconds):
    ```powershell
    samlocal build
-   samlocal deploy --stack-name lapse-local --resolve-s3 --no-confirm-changeset --capabilities CAPABILITY_IAM --parameter-overrides LocalMode=true DemoMode=true LambdaArchitecture=x86_64
+   samlocal deploy --stack-name lapse-local --resolve-s3 --no-confirm-changeset --capabilities CAPABILITY_IAM --parameter-overrides LocalMode=true DemoMode=true LambdaArchitecture=x86_64 AppUrl=https://127.0.0.1:8443
    ```
 3. Verify the SES sender identity in LocalStack:
    ```powershell
@@ -48,6 +48,12 @@ Before deploying:
 - Verify your `SenderEmail` (and test recipient if in the SES sandbox) in Amazon SES.
 
 For a live demo, set `DemoMode=true` during `sam deploy`.
+
+## Privacy and sign-in
+
+- **Sign-in:** enter your email and Lapse sends a one-time link (valid 15 minutes). There's no password. The API only ever serves the signed-in user's items, so knowing someone's email address isn't enough to see them. In LocalMode (LocalStack doesn't deliver email) the page shows the link directly.
+- **Documents:** the uploaded photo or PDF is deleted as soon as the date is read; only the name, provider and date are kept. A 1-day lifecycle rule removes anything left behind.
+- **Before a public launch:** serve the page over HTTPS (for example CloudFront in front of the web bucket). The S3 website endpoint is HTTP only, and the sign-in link carries a token.
 
 ## Running Unit Tests
 

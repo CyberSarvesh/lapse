@@ -85,13 +85,22 @@ Each entry records what was decided, the alternatives, and why. Use this when an
 ## D22. Python, arm64 Lambdas
 - **Why:** Python is simple and readable, and the AWS SDK is built in, so there are no dependencies to package. Arm64 (Graviton) is cheaper, a small detail worth mentioning.
 
-## D23. No authentication (known limitation)
-- **Decision:** Users are identified by email only.
-- **Why:** Hackathon scope. Documented honestly as a limitation, with "add Cognito sign-in" listed as the next step.
+## D23. Users prove they own their email (superseded the "email only" first version)
+- **Decision:** A user's identity is their email, but only after they prove they own it with a sign-in link (D26). Every user-data route takes the email from the session, never from the request.
+- **Why:** In the first version anyone who typed an address could read or stop that person's items. People photograph passports and insurance policies for this app, so they have to trust that only they can see their data.
 
 ## D24. SES sandbox accepted
 - **Decision:** Stay in the SES sandbox and verify the demo recipient addresses.
 - **Why:** Leaving the sandbox takes an approval process; the demo only needs verified addresses. Documented in the README.
+
+## D26. Passwordless sign-in links, sessions in DynamoDB
+- **Decision:** `POST /auth/start` emails a one-time link (15 minutes); the page exchanges it at `POST /auth/verify` for a 30-day session token sent as `Authorization: Bearer`. Login tokens and sessions are stored in the same table, keyed by the SHA-256 of the token, and every read checks `ttl` itself. `/auth/start` answers the same whether or not it sent an email, allows one email per address per minute, and the API has route throttling.
+- **Alternatives:** Amazon Cognito (passwordless needs custom auth Lambdas, and the hosted UI breaks the one-page feel); signed JWTs (needs a secret to manage, and can't be revoked); a Lambda authorizer.
+- **Why:** It reuses the one-time-link pattern the reminder emails already use (D4), has no passwords to leak, costs nothing idle, works the same on LocalStack, and sign-out really ends the session. One `authenticated_email()` check is the single choke point. The sign-in link's target comes from deploy config (`AppUrl`), never from the request, so nobody can make Lapse email a link that points elsewhere.
+
+## D27. Documents are deleted as soon as they are read
+- **Decision:** The extractor deletes the uploaded file right after reading it, whether extraction worked or not. A 1-day lifecycle rule on `uploads/` is the backstop, and the uploads bucket blocks all public access.
+- **Why:** Lapse only needs the name, provider and date. Not keeping passport and policy photos removes the most sensitive data entirely, and is a promise the page can make plainly. If extraction fails the user types the date (D10), so the file is never needed again.
 
 ## D25. Region choice
 - **Decision:** A region where both Bedrock (with a vision model) and SES are available; us-east-1 by default.

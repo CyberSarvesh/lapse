@@ -50,14 +50,18 @@ People miss expiry dates on warranties, insurance, passports, licences and free 
 ## 6. Data model (one DynamoDB table, PK + SK, on-demand, TTL enabled)
 - **Item:** keyed by user email + item ID. Holds name, type, provider, expiry date, file location, status, current execution ID and timestamps.
 - **Upload lookup:** keyed by item ID. Maps an uploaded file back to the user's email. Expires after 1 day.
+- **Login token / session:** keyed by the SHA-256 of the token. Login tokens last 15 minutes and are deleted on use; sessions last 30 days.
 - **Action link:** keyed by a short random ID. Holds the workflow task token and item info. Deleted after one use; expires after 8 days.
 - **Statuses:** PROCESSING, NEEDS_DATE, ACTIVE, RENEWED, IGNORED, DELETED.
 
 ## 7. API routes
 | Route | Purpose |
 |---|---|
-| GET /upload-url | Get a presigned upload URL for an email and file type |
-| GET /items | List a user's items (deleted ones hidden), sorted by expiry |
+| POST /auth/start | Email a one-time sign-in link (same answer whether or not the address is known) |
+| POST /auth/verify | Exchange the link's token for a session token |
+| POST /auth/logout | End the session |
+| GET /upload-url | Get a presigned upload URL for a file type (signed in) |
+| GET /items | List the signed-in user's items (deleted ones hidden), sorted by expiry |
 | POST /items | Add an item manually, or supply the date for a "needs date" item; starts a workflow |
 | DELETE /items/{itemId} | Stop reminders (soft delete) |
 | GET /action | Show confirm page for an email button |
@@ -65,7 +69,7 @@ People miss expiry dates on warranties, insurance, passports, licences and free 
 
 ## 8. Front end
 A single HTML page, no framework:
-- Email field (remembered in the browser)
+- Sign in with email: a one-time link, no password (D26); the session is remembered in the browser
 - File picker (JPG, PNG, WEBP, PDF, under 3.5 MB) and upload button
 - "Add manually" form
 - List of items as cards with a status chip ("23 days left", "reading…", "needs a date", "renewed ✔")
@@ -128,4 +132,4 @@ Say clearly on camera that demo mode shortens 30 days to about 90 seconds.
 8. Known limitations and what's next
 
 ## 14. Out of scope
-User accounts/login, SMS or WhatsApp, calendar export, mobile app, multi-language, CI/CD.
+Passwords and social login, SMS or WhatsApp, calendar export, mobile app, multi-language, CI/CD.
