@@ -96,6 +96,18 @@ Resources:
       NotificationConfiguration:
         EventBridgeConfiguration:
           EventBridgeEnabled: true
+      # Documents are deleted right after extraction (D27); this is the backstop.
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteUploadsAfterOneDay
+            Status: Enabled
+            Prefix: uploads/
+            ExpirationInDays: 1
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
 
   WebBucket:
     Type: AWS::S3::Bucket
@@ -151,10 +163,14 @@ Resources:
         - S3ReadPolicy:
             BucketName: !Ref UploadsBucket
         - Statement:
-            Effect: Allow
-            Action:
-              - bedrock:InvokeModel
-            Resource: "*"
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - s3:DeleteObject
+              Resource: !Sub "${UploadsBucket.Arn}/uploads/*"
 
   ComputeReminderFunction:
     Type: AWS::Serverless::Function

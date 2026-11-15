@@ -112,6 +112,14 @@ def _bedrock_extract(s3_key: str, body: bytes) -> dict[str, Any]:
     }
 
 
+def _delete_document(bucket: str, key: str) -> None:
+    """Best-effort delete; the uploads bucket lifecycle rule (1 day) is the backstop."""
+    try:
+        get_s3_client().delete_object(Bucket=bucket, Key=key)
+    except Exception:
+        logger.exception("Could not delete %s; lifecycle rule will remove it", key)
+
+
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     """Extract document details or pass through pre-populated manual/continued items."""
     if event.get("skipExtract"):
@@ -148,13 +156,18 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     except Exception:
         # Never break the flow (D10), but make the failure visible in CloudWatch.
         logger.exception("Extraction failed for %s; falling back to NEEDS_DATE", s3_key)
+        placeholder = str(existing.get("name") or "")
         extracted = {
             "found": False,
-            "name": existing.get("name") or "Uploaded Document",
+            "name": "Uploaded Document" if not placeholder or placeholder.startswith("Reading document") else placeholder,
             "type": existing.get("type") or "other",
             "provider": existing.get("provider") or "",
             "expiryDate": "",
         }
+    finally:
+        # Privacy (D27): once read, the photo is never needed again. Only the
+        # extracted name, provider and date are kept.
+        _delete_document(bucket, s3_key)
 
     if not extracted["found"]:
         put_item(
@@ -168,7 +181,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 "type": extracted["type"],
                 "provider": extracted["provider"],
                 "expiryDate": "",
-                "s3Key": s3_key,
+                "s3Key": "",
                 "status": STATUS_NEEDS_DATE,
                 "followUpCount": 0,
                 "createdAt": existing.get("createdAt") or now,
@@ -184,6 +197,6 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "type": extracted["type"],
         "provider": extracted["provider"],
         "expiryDate": extracted["expiryDate"],
-        "s3Key": s3_key,
+        "s3Key": "",
         "followUpCount": 0,
     }
