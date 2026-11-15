@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Lapse — Serverless document expiry reminder.
+  AWS Weekend Challenge: "No Pipeline, No Problem"
+
+Parameters:
+  SenderEmail:
+    Type: String
+    Default: noreply@lapse.local
+    Description: SES-verified sender email address
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-3-5-haiku-20241022-v1:0
+    Description: Vision-capable Amazon Bedrock model ID
+  DemoMode:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Shrinks waits to seconds/minutes for live demo
+  LeadDays:
+    Type: Number
+    Default: 30
+    Description: Days before expiry to send the first reminder
+  LocalMode:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Enable local fallback for Bedrock when running in LocalStack
+  LambdaArchitecture:
+    Type: String
+    Default: arm64
+    AllowedValues: ["arm64", "x86_64"]
+    Description: Lambda CPU architecture (arm64 recommended on AWS)
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures:
+      - !Ref LambdaArchitecture
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref LapseTable
+        UPLOADS_BUCKET: !Ref UploadsBucket
+        SENDER_EMAIL: !Ref SenderEmail
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+        DEMO_MODE: !Ref DemoMode
+        LEAD_DAYS: !Ref LeadDays
+        LOCAL_MODE: !Ref LocalMode
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Storage & Data (Milestone 2)
+  # ---------------------------------------------------------------------------
+  LapseTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: [PUT, GET, HEAD]
+            AllowedOrigins: ["*"]
+            MaxAge: 3600
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+Outputs:
+  TableName:
+    Description: DynamoDB table name
+    Value: !Ref LapseTable
+  UploadsBucketName:
+    Description: S3 bucket for uploaded documents
+    Value: !Ref UploadsBucket
+  WebBucketName:
+    Description: S3 bucket for static frontend
+    Value: !Ref WebBucket
