@@ -93,6 +93,26 @@ Resources:
     Properties:
       WebsiteConfiguration:
         IndexDocument: index.html
+      # New buckets block public access by default; the static site must be readable.
+      # (If your account-level Block Public Access is on, open web/index.html locally instead.)
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadForStaticSite
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${WebBucket.Arn}/*"
 
   # ---------------------------------------------------------------------------
   # HTTP API Gateway (D18)
