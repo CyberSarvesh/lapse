@@ -31,21 +31,22 @@
       margin: 0;
       padding: 24px 16px 64px;
     }
-    .container { max-width: 760px; margin: 0 auto; }
-    header { margin-bottom: 24px; }
+    .container { max-width: 720px; margin: 0 auto; }
+    header { margin-bottom: 20px; }
     header h1 { margin: 0 0 4px; font-size: 28px; }
     header p { margin: 0; color: var(--muted); }
     .panel {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 20px;
+      padding: 18px 20px;
       margin-bottom: 16px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
     }
     .panel h2 { font-size: 16px; margin: 0 0 12px; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    label.field-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
     input, select, button {
       font: inherit;
       padding: 9px 12px;
@@ -53,21 +54,73 @@
       border: 1px solid var(--border);
     }
     input, select { background: #fff; color: var(--text); width: 100%; }
-    button {
+    :is(input, select):is(:user-invalid, .user-invalid-fallback) {
+      border-color: #d93025;
+      background-color: #fce8e6;
+    }
+    :is(input, select):is(:user-valid, .user-valid-fallback) {
+      border-color: #188038;
+    }
+    .error-msg {
+      display: none;
+      color: #d93025;
+      font-size: 0.85rem;
+      margin-top: 4px;
+    }
+    :is(input, select):is(:user-invalid, .user-invalid-fallback) + .error-msg {
+      display: block;
+    }
+    button, .btn-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
       background: var(--primary);
       color: #fff;
       border: 0;
+      border-radius: 8px;
+      padding: 9px 14px;
+      font: inherit;
       font-weight: 600;
       cursor: pointer;
+      text-decoration: none;
       white-space: nowrap;
     }
-    button:hover { background: var(--primary-hover); }
-    button.secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
-    button.secondary:hover { background: #f1f5f9; }
-    button.danger { background: #fff; color: var(--danger); border: 1px solid #fecaca; }
+    button:hover, .btn-link:hover { background: var(--primary-hover); }
+    button.secondary, .btn-link.secondary {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      padding: 7px 11px;
+    }
+    button.secondary:hover, .btn-link.secondary:hover { background: #f1f5f9; }
+    button.danger {
+      background: #fff;
+      color: var(--danger);
+      border: 1px solid #fecaca;
+      font-size: 13px;
+      padding: 7px 11px;
+    }
     button.danger:hover { background: #fef2f2; }
     button:disabled { opacity: 0.55; cursor: not-allowed; }
-    .status-msg { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 18px; }
+    .dropzone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
+      padding: 24px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background-color 0.15s;
+      background: #f8fafc;
+    }
+    .dropzone.dragover {
+      border-color: var(--primary);
+      background: #eff6ff;
+    }
+    .dropzone strong { display: block; font-size: 15px; margin-bottom: 4px; }
+    .dropzone span { font-size: 13px; color: var(--muted); }
+    .status-msg { font-size: 13px; color: var(--muted); margin-top: 10px; min-height: 18px; }
+    .status-msg.error { color: var(--danger); }
     .items-list { display: flex; flex-direction: column; gap: 12px; }
     .item-card {
       background: var(--card);
@@ -94,58 +147,92 @@
     .chip.gray { background: var(--gray-bg); color: var(--gray-fg); }
     .inline-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .inline-form input[type="date"] { width: auto; }
-    .settings-bar { font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-    .settings-bar input { font-size: 12px; padding: 5px 8px; }
+    details summary {
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      user-select: none;
+    }
+    details[open] summary { margin-bottom: 12px; color: var(--text); }
+    .visually-hidden:where(:not(:focus-within, :active)) {
+      position: absolute !important;
+      clip-path: inset(50%) !important;
+      overflow: hidden !important;
+      width: 1px !important;
+      height: 1px !important;
+      margin: -1px !important;
+      padding: 0 !important;
+      border: 0 !important;
+      white-space: nowrap !important;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <h1>Lapse</h1>
-      <p>Snap a photo of any warranty, insurance policy, passport or subscription. We'll remind you before it lapses.</p>
+      <p>Snap or drop a warranty, insurance policy, passport or subscription. Lapse reads the expiry date and reminds you before it lapses.</p>
     </header>
 
     <div class="panel">
-      <h2>Your Email</h2>
+      <label class="field-label" for="emailInput">Your Email</label>
       <div class="row">
-        <input id="emailInput" type="email" placeholder="you@example.com" style="flex:1; min-width: 220px;">
+        <div style="flex:1; min-width: 220px;">
+          <input id="emailInput" type="email" required autocomplete="email" placeholder="you@example.com" data-error="email-error">
+          <div id="email-error" class="error-msg">
+            <span role="img" aria-label="Error">❌</span> Enter an email address in the format you@example.com.
+          </div>
+        </div>
         <button id="loadBtn" type="button">Load Items</button>
       </div>
-      <div class="settings-bar">
-        <span>API URL:</span>
-        <input id="apiUrlInput" type="url" placeholder="https://...execute-api.us-east-1.amazonaws.com" style="flex:1;">
-      </div>
+      <details style="margin-top: 12px;">
+        <summary>Connection settings</summary>
+        <label class="field-label" for="apiUrlInput">API URL</label>
+        <input id="apiUrlInput" type="url" placeholder="https://...execute-api.us-east-1.amazonaws.com">
+      </details>
     </div>
 
     <div class="panel">
-      <h2>Upload a Document</h2>
-      <div class="row">
-        <input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" style="flex:1;">
-        <button id="uploadBtn" type="button">Upload &amp; Read</button>
+      <h2>Snap or Drop a Document</h2>
+      <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Choose or drop a document to upload automatically">
+        <strong>Click to snap/choose a file, or drag &amp; drop here</strong>
+        <span>JPG, PNG, WEBP, or PDF under 3.5 MB — uploads automatically</span>
       </div>
-      <div id="uploadMsg" class="status-msg"></div>
-    </div>
+      <input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" capture="environment" class="visually-hidden">
+      <div id="uploadMsg" class="status-msg" role="status"></div>
 
-    <div class="panel">
-      <h2>Or Add Manually</h2>
-      <form id="manualForm">
-        <div class="grid">
-          <input id="mName" type="text" placeholder="Item name (e.g. Car Insurance)" required>
-          <select id="mType">
-            <option value="warranty">Warranty</option>
-            <option value="insurance">Insurance</option>
-            <option value="passport">Passport / ID</option>
-            <option value="subscription">Subscription</option>
-            <option value="other">Other</option>
-          </select>
-          <input id="mProvider" type="text" placeholder="Provider (optional)">
-          <input id="mExpiry" type="date" required>
-        </div>
-        <div class="row" style="margin-top: 10px;">
-          <button type="submit">Save &amp; Schedule Reminder</button>
-        </div>
-      </form>
-      <div id="manualMsg" class="status-msg"></div>
+      <details style="margin-top: 14px;">
+        <summary>Or add an item manually</summary>
+        <form id="manualForm" novalidate>
+          <div class="grid">
+            <div>
+              <input id="mName" type="text" required placeholder="Item name (e.g. Car Insurance)" data-error="mName-error">
+              <div id="mName-error" class="error-msg">Enter an item name.</div>
+            </div>
+            <div>
+              <select id="mType" aria-label="Item type">
+                <option value="warranty">Warranty</option>
+                <option value="insurance">Insurance</option>
+                <option value="passport">Passport / ID</option>
+                <option value="subscription">Subscription</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <input id="mProvider" type="text" placeholder="Provider (optional)">
+            </div>
+            <div>
+              <input id="mExpiry" type="date" required data-error="mExpiry-error" aria-label="Expiry date">
+              <div id="mExpiry-error" class="error-msg">Choose an expiry date.</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top: 10px;">
+            <button id="manualBtn" type="submit">Save &amp; Schedule Reminder</button>
+          </div>
+        </form>
+        <div id="manualMsg" class="status-msg" role="status"></div>
+      </details>
     </div>
 
     <div class="panel">
@@ -165,12 +252,50 @@
 
     const emailInput = document.getElementById("emailInput");
     const apiUrlInput = document.getElementById("apiUrlInput");
+    const dropzone = document.getElementById("dropzone");
     const fileInput = document.getElementById("fileInput");
-    const uploadBtn = document.getElementById("uploadBtn");
     const uploadMsg = document.getElementById("uploadMsg");
     const manualForm = document.getElementById("manualForm");
+    const manualBtn = document.getElementById("manualBtn");
     const manualMsg = document.getElementById("manualMsg");
     const itemsList = document.getElementById("itemsList");
+
+    // Sync ARIA invalid state with :user-invalid after interaction
+    const initValidation = () => {
+      const fields = document.querySelectorAll("input, select, textarea");
+      fields.forEach((el) => el.setAttribute("aria-invalid", "false"));
+      const sync = (el) => {
+        if (!el.matches?.("input, select, textarea")) return;
+        const invalid = el.matches(":user-invalid");
+        el.setAttribute("aria-invalid", invalid ? "true" : "false");
+        const errId = el.dataset.error;
+        if (errId) {
+          if (invalid) el.setAttribute("aria-describedby", errId);
+          else el.removeAttribute("aria-describedby");
+        }
+      };
+      document.addEventListener("blur", (e) => sync(e.target), true);
+      document.addEventListener("input", (e) => sync(e.target));
+      document.addEventListener("change", (e) => sync(e.target), true);
+    };
+    initValidation();
+
+    // Load Temporal polyfill only if native Temporal is unavailable (for location-agnostic PlainDate math)
+    const ensureTemporal = async () => {
+      if (typeof Temporal === "undefined") {
+        try {
+          const mod = await import("https://esm.sh/temporal-polyfill@0.2.5");
+          globalThis.Temporal = mod.Temporal;
+        } catch {
+          // Offline fallback handled in daysLeft()
+        }
+      }
+    };
+
+    // Initialize email & API URL from query param or localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramApi = urlParams.get("api");
+    if (paramApi) localStorage.setItem("lapse_api_url", paramApi);
 
     emailInput.value = localStorage.getItem("lapse_email") || "";
     const savedApi = localStorage.getItem("lapse_api_url");
@@ -188,12 +313,23 @@
       return email;
     }
 
+    function setMsg(el, text, isError = false) {
+      el.textContent = text;
+      el.classList.toggle("error", isError);
+    }
+
     function daysLeft(expiryDate) {
       if (!expiryDate) return null;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const target = new Date(expiryDate + "T00:00:00");
-      return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+      if (typeof Temporal !== "undefined") {
+        const today = Temporal.Now.plainDateISO();
+        const target = Temporal.PlainDate.from(expiryDate);
+        return today.until(target, { largestUnit: "days" }).days;
+      }
+      const [y, m, d] = expiryDate.split("-").map(Number);
+      const now = new Date();
+      const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+      const targetUtc = Date.UTC(y, m - 1, d);
+      return Math.round((targetUtc - todayUtc) / 86400000);
     }
 
     function statusChip(item) {
@@ -209,6 +345,47 @@
       return `<span class="chip ok">${d} days left</span>`;
     }
 
+    function googleCalendarUrl(item) {
+      const compact = item.expiryDate.replace(/-/g, "");
+      const title = `Renew: ${item.name}`;
+      const details = [item.type, item.provider].filter(Boolean).join(" · ");
+      const params = new URLSearchParams({
+        action: "TEMPLATE",
+        text: title,
+        dates: `${compact}/${compact}`,
+        details: details || "Lapse expiry reminder",
+      });
+      return `https://calendar.google.com/calendar/render?${params.toString()}`;
+    }
+
+    function downloadIcs(item) {
+      const compact = item.expiryDate.replace(/-/g, "");
+      const ics = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Lapse//Expiry Reminder//EN",
+        "BEGIN:VEVENT",
+        `UID:${item.itemId}@lapse`,
+        `DTSTART;VALUE=DATE:${compact}`,
+        `SUMMARY:Renew: ${item.name}`,
+        `DESCRIPTION:${[item.type, item.provider].filter(Boolean).join(" - ") || "Lapse expiry reminder"}`,
+        "BEGIN:VALARM",
+        "TRIGGER:-P30D",
+        "ACTION:DISPLAY",
+        `DESCRIPTION:${item.name} expires in 30 days`,
+        "END:VALARM",
+        "END:VEVENT",
+        "END:VCALENDAR",
+      ].join("\r\n");
+      const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "reminder"}.ics`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
     function esc(str) {
       const div = document.createElement("div");
       div.textContent = str || "";
@@ -216,28 +393,45 @@
     }
 
     let pollTimer = null;
+    let currentItems = [];
 
     async function loadItems() {
       const api = getApiUrl();
       const email = getEmail();
-      if (!api || !email) return;
+      if (!api) {
+        itemsList.innerHTML = '<p style="color:var(--danger); margin:0;">Open "Connection settings" above and enter your API URL.</p>';
+        return;
+      }
+      if (!email || !emailInput.checkValidity()) return;
 
-      const res = await fetch(`${api}/items?email=${encodeURIComponent(email)}`);
-      const data = await res.json();
-      const items = data.items || [];
+      try {
+        const res = await fetch(`${api}/items?email=${encodeURIComponent(email)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load items");
+        currentItems = data.items || [];
+        renderItems(currentItems);
+      } catch (err) {
+        itemsList.innerHTML = `<p style="color:var(--danger); margin:0;">${esc(err.message)}</p>`;
+      }
+    }
 
+    function renderItems(items) {
       if (items.length === 0) {
-        itemsList.innerHTML = '<p style="color:var(--muted); margin:0;">No items yet. Upload a document or add one manually.</p>';
+        itemsList.innerHTML = '<p style="color:var(--muted); margin:0;">No items yet. Snap or drop a document above to get started.</p>';
         return;
       }
 
-      itemsList.innerHTML = items.map(item => {
+      itemsList.innerHTML = items.map((item, idx) => {
         const meta = [item.type, item.provider, item.expiryDate ? `Expires ${item.expiryDate}` : ""].filter(Boolean).join(" · ");
         const needsDateForm = item.status === "NEEDS_DATE" ? `
           <form class="inline-form" onsubmit="submitManualDate(event, '${esc(item.itemId)}', '${esc(item.name)}')">
-            <input type="date" required>
+            <input type="date" required aria-label="Expiry date">
             <button type="submit">Save Date</button>
           </form>
+        ` : "";
+        const calendarBtns = item.expiryDate ? `
+          <a class="btn-link secondary" href="${googleCalendarUrl(item)}" target="_blank" rel="noopener">Add to Google Calendar</a>
+          <button type="button" class="secondary" onclick="downloadIcs(currentItems[${idx}])">Download .ics</button>
         ` : "";
         return `
           <div class="item-card">
@@ -250,13 +444,14 @@
             </div>
             ${needsDateForm}
             <div class="row">
-              <button type="button" class="danger" onclick="stopReminders('${esc(item.itemId)}')">Stop reminders</button>
+              ${calendarBtns}
+              <button type="button" class="danger" onclick="stopReminders(this, '${esc(item.itemId)}')">Stop reminders</button>
             </div>
           </div>
         `;
       }).join("");
 
-      const hasProcessing = items.some(i => i.status === "PROCESSING");
+      const hasProcessing = items.some((i) => i.status === "PROCESSING");
       if (!hasProcessing && pollTimer) {
         clearInterval(pollTimer);
         pollTimer = null;
@@ -281,6 +476,8 @@
       const api = getApiUrl();
       const email = getEmail();
       const expiryDate = ev.target.querySelector('input[type="date"]').value;
+      const btn = ev.target.querySelector("button");
+      btn.disabled = true;
       await fetch(`${api}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -289,32 +486,40 @@
       await loadItems();
     }
 
-    async function stopReminders(itemId) {
+    async function stopReminders(btn, itemId) {
       const api = getApiUrl();
       const email = getEmail();
+      btn.disabled = true;
+      btn.textContent = "Stopping…";
       await fetch(`${api}/items/${encodeURIComponent(itemId)}?email=${encodeURIComponent(email)}`, {
         method: "DELETE",
       });
       await loadItems();
     }
 
-    uploadBtn.addEventListener("click", async () => {
+    async function uploadFile(file) {
       const api = getApiUrl();
       const email = getEmail();
-      const file = fileInput.files[0];
-      if (!api || !email) { uploadMsg.textContent = "Please enter your email and API URL."; return; }
-      if (!file) { uploadMsg.textContent = "Please choose a file first."; return; }
-      if (file.size > MAX_FILE_BYTES) { uploadMsg.textContent = "File must be under 3.5 MB."; return; }
+      if (!api) { setMsg(uploadMsg, "Open Connection settings and enter your API URL.", true); return; }
+      if (!email || !emailInput.checkValidity()) {
+        setMsg(uploadMsg, "Enter your email address first.", true);
+        emailInput.focus();
+        return;
+      }
+      if (!file) return;
+      if (file.size > MAX_FILE_BYTES) {
+        setMsg(uploadMsg, "File must be under 3.5 MB.", true);
+        return;
+      }
 
-      const ext = file.name.split(".").pop().toLowerCase();
-      uploadBtn.disabled = true;
-      uploadMsg.textContent = "Requesting upload URL…";
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+      setMsg(uploadMsg, "Requesting upload URL…");
       try {
         const resp = await fetch(`${api}/upload-url?email=${encodeURIComponent(email)}&ext=${encodeURIComponent(ext)}`);
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || "Failed to get upload URL");
 
-        uploadMsg.textContent = "Uploading document…";
+        setMsg(uploadMsg, `Uploading ${file.name}…`);
         const putRes = await fetch(data.uploadUrl, {
           method: "PUT",
           headers: { "Content-Type": file.type || "application/octet-stream" },
@@ -322,47 +527,79 @@
         });
         if (!putRes.ok) throw new Error("Upload to S3 failed");
 
-        uploadMsg.textContent = "Uploaded! Reading expiry date…";
+        setMsg(uploadMsg, "Uploaded! Reading expiry date…");
         fileInput.value = "";
         await loadItems();
         startShortPoll();
       } catch (err) {
-        uploadMsg.textContent = err.message;
-      } finally {
-        uploadBtn.disabled = false;
+        setMsg(uploadMsg, err.message, true);
       }
+    }
+
+    // Auto-upload on file pick or drag-and-drop
+    dropzone.addEventListener("click", () => fileInput.click());
+    dropzone.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+    });
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+    });
+    dropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("dragover");
+      if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
     });
 
     manualForm.addEventListener("submit", async (ev) => {
       ev.preventDefault();
+      if (!manualForm.checkValidity()) {
+        manualForm.querySelector(":invalid")?.focus();
+        return;
+      }
       const api = getApiUrl();
       const email = getEmail();
-      if (!api || !email) { manualMsg.textContent = "Please enter your email and API URL."; return; }
-      manualMsg.textContent = "Saving…";
-      const res = await fetch(`${api}/items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          name: document.getElementById("mName").value,
-          type: document.getElementById("mType").value,
-          provider: document.getElementById("mProvider").value,
-          expiryDate: document.getElementById("mExpiry").value,
-        }),
-      });
-      if (res.ok) {
-        manualForm.reset();
-        manualMsg.textContent = "Scheduled!";
-        await loadItems();
-      } else {
+      if (!api || !email) { setMsg(manualMsg, "Enter your email and API URL first.", true); return; }
+
+      manualBtn.disabled = true;
+      setMsg(manualMsg, "Scheduling…");
+      try {
+        const res = await fetch(`${api}/items`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            name: document.getElementById("mName").value,
+            type: document.getElementById("mType").value,
+            provider: document.getElementById("mProvider").value,
+            expiryDate: document.getElementById("mExpiry").value,
+          }),
+        });
         const data = await res.json();
-        manualMsg.textContent = data.error || "Failed to save";
+        if (!res.ok) throw new Error(data.error || "Failed to save");
+        manualForm.reset();
+        setMsg(manualMsg, "Scheduled!");
+        await loadItems();
+      } catch (err) {
+        setMsg(manualMsg, err.message, true);
+      } finally {
+        manualBtn.disabled = false;
       }
     });
 
+    emailInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") loadItems();
+    });
     document.getElementById("loadBtn").addEventListener("click", loadItems);
     document.getElementById("refreshBtn").addEventListener("click", loadItems);
-    if (emailInput.value && apiUrlInput.value) loadItems();
+
+    ensureTemporal().then(() => {
+      if (emailInput.value && apiUrlInput.value) loadItems();
+    });
   </script>
 </body>
 </html>
