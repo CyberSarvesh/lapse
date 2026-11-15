@@ -35,7 +35,8 @@ Parameters:
 
 Globals:
   Function:
-    Runtime: python3.12
+    CodeUri: src/
+    Runtime: python3.13
     Architectures:
       - !Ref LambdaArchitecture
     Timeout: 30
@@ -91,7 +92,227 @@ Resources:
       WebsiteConfiguration:
         IndexDocument: index.html
 
+  # ---------------------------------------------------------------------------
+  # HTTP API Gateway (D18)
+  # ---------------------------------------------------------------------------
+  LapseApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: ["*"]
+        AllowMethods: [GET, POST, DELETE, OPTIONS]
+        AllowHeaders: [Content-Type]
+
+  # ---------------------------------------------------------------------------
+  # Workflow Lambdas
+  # ---------------------------------------------------------------------------
+  ExtractDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.extract_document.handler
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+        - S3ReadPolicy:
+            BucketName: !Ref UploadsBucket
+        - Statement:
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+            Resource: "*"
+
+  ComputeReminderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.compute_reminder.handler
+
+  SendReminderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.send_reminder.handler
+      Environment:
+        Variables:
+          API_BASE_URL: !Sub "https://${LapseApi}.execute-api.${AWS::Region}.amazonaws.com"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+        - SESCrudPolicy:
+            IdentityName: "*"
+
+  # ---------------------------------------------------------------------------
+  # Step Functions Standard Workflow (D1, D2, D3, D13)
+  # ---------------------------------------------------------------------------
+  LapseStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      DefinitionUri: statemachine/lapse.asl.json
+      DefinitionSubstitutions:
+        TableName: !Ref LapseTable
+        ExtractDocumentFunctionArn: !GetAtt ExtractDocumentFunction.Arn
+        ComputeReminderFunctionArn: !GetAtt ComputeReminderFunction.Arn
+        SendReminderFunctionArn: !GetAtt SendReminderFunction.Arn
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ExtractDocumentFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ComputeReminderFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SendReminderFunction
+        - Statement:
+            Effect: Allow
+            Action:
+              - states:StartExecution
+            Resource: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:*"
+
+  # ---------------------------------------------------------------------------
+  # EventBridge Rule: S3 Upload -> Step Functions (D7)
+  # ---------------------------------------------------------------------------
+  S3UploadEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref UploadsBucket
+          object:
+            key:
+              - prefix: uploads/
+      Targets:
+        - Arn: !Ref LapseStateMachine
+          Id: StartLapseWorkflow
+          RoleArn: !GetAtt EventBridgeStepFunctionsRole.Arn
+
+  EventBridgeStepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartLapseStateMachine
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref LapseStateMachine
+
+  # ---------------------------------------------------------------------------
+  # API Lambdas (D20 least-privilege)
+  # ---------------------------------------------------------------------------
+  GetUploadUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.get_upload_url.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+        - S3WritePolicy:
+            BucketName: !Ref UploadsBucket
+      Events:
+        GetUploadUrl:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /upload-url
+            Method: GET
+
+  ListItemsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.list_items.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref LapseTable
+      Events:
+        ListItems:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /items
+            Method: GET
+
+  AddOrUpdateItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.add_or_update_item.handler
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: !Ref LapseStateMachine
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+        - StepFunctionsExecutionPolicy:
+            StateMachineName: !GetAtt LapseStateMachine.Name
+      Events:
+        AddOrUpdateItem:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /items
+            Method: POST
+
+  DeleteItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.delete_item.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+      Events:
+        DeleteItem:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /items/{itemId}
+            Method: DELETE
+
+  ActionHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.action_handler.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+        - Statement:
+            Effect: Allow
+            Action:
+              - states:SendTaskSuccess
+            Resource: "*"
+      Events:
+        GetAction:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /action
+            Method: GET
+        PostAction:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /action
+            Method: POST
+
 Outputs:
+  ApiUrl:
+    Description: HTTP API endpoint URL
+    Value: !Sub "https://${LapseApi}.execute-api.${AWS::Region}.amazonaws.com"
+  StateMachineArn:
+    Description: Step Functions state machine ARN
+    Value: !Ref LapseStateMachine
   TableName:
     Description: DynamoDB table name
     Value: !Ref LapseTable
@@ -101,3 +322,6 @@ Outputs:
   WebBucketName:
     Description: S3 bucket for static frontend
     Value: !Ref WebBucket
+  WebUrl:
+    Description: S3 static website URL
+    Value: !GetAtt WebBucket.WebsiteURL
