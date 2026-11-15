@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from handlers import action_handler, compute_reminder, delete_item, extract_document, get_upload_url
+from handlers import action_handler, add_or_update_item, auth, compute_reminder, delete_item, extract_document, get_upload_url, list_items
 
 
 class ComputeReminderTests(unittest.TestCase):
@@ -70,22 +70,46 @@ class ExtractDocumentTests(unittest.TestCase):
         mock_put.assert_called_once()
         saved = mock_put.call_args[0][0]
         self.assertEqual(saved["status"], "NEEDS_DATE")
+        self.assertEqual(saved["s3Key"], "")
+        # D27: the document is deleted even when extraction found nothing.
+        mock_s3.delete_object.assert_called_once_with(Bucket="uploads", Key="uploads/item1.jpg")
+
+    def test_document_deleted_after_successful_read(self) -> None:
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"img"), "Metadata": {"expiry": "2030-01-01"}}
+        with (
+            patch.dict(os.environ, {"LOCAL_MODE": "true", "UPLOADS_BUCKET": "uploads"}),
+            patch("handlers.extract_document.get_upload_lookup", return_value={"email": "a@b.com"}),
+            patch("handlers.extract_document.get_item", return_value={}),
+            patch("handlers.extract_document.get_s3_client", return_value=mock_s3),
+            patch("handlers.extract_document.put_item"),
+        ):
+            res = extract_document.handler(
+                {"detail": {"bucket": {"name": "uploads"}, "object": {"key": "uploads/item2.png"}}}, None
+            )
+        self.assertTrue(res["found"])
+        self.assertEqual(res["s3Key"], "")
+        mock_s3.delete_object.assert_called_once_with(Bucket="uploads", Key="uploads/item2.png")
 
 
 class ApiHandlersTests(unittest.TestCase):
     def test_get_upload_url_rejects_bad_ext(self) -> None:
-        res = get_upload_url.handler({"queryStringParameters": {"email": "a@b.com", "ext": "exe"}}, None)
+        with patch("handlers.get_upload_url.authenticated_email", return_value="a@b.com"):
+            res = get_upload_url.handler({"queryStringParameters": {"ext": "exe"}}, None)
         self.assertEqual(res["statusCode"], 400)
 
     def test_delete_item_soft_deletes(self) -> None:
         with (
-            patch("handlers.delete_item.get_item", return_value={"itemId": "x1", "status": "ACTIVE"}),
+            patch("handlers.delete_item.authenticated_email", return_value="a@b.com"),
+            patch("handlers.delete_item.get_item", return_value={"itemId": "x1", "status": "ACTIVE"}) as mock_get,
             patch("handlers.delete_item.put_item") as mock_put,
         ):
             res = delete_item.handler(
-                {"pathParameters": {"itemId": "x1"}, "queryStringParameters": {"email": "a@b.com"}},
+                # An email in the query string is ignored: identity comes from the session.
+                {"pathParameters": {"itemId": "x1"}, "queryStringParameters": {"email": "victim@x.com"}},
                 None,
             )
+        mock_get.assert_called_once_with("a@b.com", "x1")
         self.assertEqual(res["statusCode"], 200)
         self.assertEqual(mock_put.call_args[0][0]["status"], "DELETED")
 
@@ -249,6 +273,83 @@ class StaleProcessingTests(unittest.TestCase):
         self.assertEqual(items["old"]["status"], "NEEDS_DATE")
         self.assertEqual(items["old"]["name"], "Uploaded Document")
         self.assertEqual(items["new"]["status"], "PROCESSING")
+
+
+class AuthTests(unittest.TestCase):
+    def test_user_data_routes_reject_requests_without_a_session(self) -> None:
+        anonymous = {
+            "headers": {},
+            "queryStringParameters": {"email": "victim@x.com", "ext": "jpg"},
+            "pathParameters": {"itemId": "x1"},
+            "body": json.dumps({"email": "victim@x.com", "expiryDate": "2030-01-01"}),
+        }
+        table = MagicMock()
+        table.get_item.return_value = {}
+        with patch("common.auth.get_dynamodb_table", return_value=table):
+            for module in (list_items, get_upload_url, add_or_update_item, delete_item):
+                with self.subTest(module=module.__name__):
+                    self.assertEqual(module.handler(dict(anonymous), None)["statusCode"], 401)
+
+    def test_session_lookup_uses_hashed_token_and_enforces_ttl(self) -> None:
+        import time
+
+        from common import auth as auth_lib
+
+        table = MagicMock()
+        table.get_item.return_value = {"Item": {"email": "a@b.com", "ttl": int(time.time()) + 60}}
+        event = {"headers": {"Authorization": "Bearer secret-token"}}
+        with patch("common.auth.get_dynamodb_table", return_value=table):
+            self.assertEqual(auth_lib.authenticated_email(event), "a@b.com")
+            key = table.get_item.call_args.kwargs["Key"]["PK"]
+            self.assertNotIn("secret-token", key)
+            table.get_item.return_value = {"Item": {"email": "a@b.com", "ttl": int(time.time()) - 1}}
+            self.assertIsNone(auth_lib.authenticated_email(event))
+
+    def test_start_sends_link_to_configured_app_url(self) -> None:
+        ses = MagicMock()
+        with (
+            patch.dict(os.environ, {"APP_URL": "https://app.example", "SENDER_EMAIL": "no@reply", "LOCAL_MODE": "false"}),
+            patch("handlers.auth.allow_login_email", return_value=True),
+            patch("handlers.auth.create_login_token", return_value="tok"),
+            patch("handlers.auth.get_ses_client", return_value=ses),
+        ):
+            res = auth.handler({"rawPath": "/auth/start", "body": json.dumps({"email": "A@B.com"})}, None)
+        self.assertEqual(res["statusCode"], 200)
+        self.assertNotIn("devLoginUrl", json.loads(res["body"]))
+        sent = ses.send_email.call_args.kwargs
+        self.assertEqual(sent["Destination"], {"ToAddresses": ["a@b.com"]})
+        self.assertIn("https://app.example/?login=tok", sent["Message"]["Body"]["Text"]["Data"])
+
+    def test_start_is_throttled_without_revealing_it(self) -> None:
+        ses = MagicMock()
+        with (
+            patch.dict(os.environ, {"APP_URL": "https://app.example", "SENDER_EMAIL": "no@reply"}),
+            patch("handlers.auth.allow_login_email", return_value=False),
+            patch("handlers.auth.get_ses_client", return_value=ses),
+        ):
+            res = auth.handler({"rawPath": "/auth/start", "body": json.dumps({"email": "a@b.com"})}, None)
+        self.assertEqual(res["statusCode"], 200)
+        ses.send_email.assert_not_called()
+
+    def test_verify_exchanges_token_once(self) -> None:
+        with (
+            patch("handlers.auth.consume_login_token", side_effect=["a@b.com", None]),
+            patch("handlers.auth.create_session", return_value="sess"),
+        ):
+            ok = auth.handler({"rawPath": "/auth/verify", "body": json.dumps({"token": "t"})}, None)
+            again = auth.handler({"rawPath": "/auth/verify", "body": json.dumps({"token": "t"})}, None)
+        self.assertEqual(json.loads(ok["body"]), {"token": "sess", "email": "a@b.com"})
+        self.assertEqual(again["statusCode"], 401)
+
+    def test_expired_action_link_is_rejected_even_before_ttl_cleanup(self) -> None:
+        import time
+
+        from common import db
+
+        table = MagicMock()
+        table.get_item.return_value = {"Item": {"actionId": "x", "ttl": int(time.time()) - 5}}
+        with patch("common.db.get_dynamodb_table", return_value=table):
+            self.assertIsNone(db.get_action_link("x"))
 
 
 if __name__ == "__main__":
