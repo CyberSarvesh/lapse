@@ -1,0 +1,287 @@
+{
+  "Comment": "Lapse — Step Functions Standard scheduler and human-in-the-loop reminder workflow",
+  "StartAt": "ExtractDetails",
+  "States": {
+    "ExtractDetails": {
+      "Type": "Task",
+      "Resource": "${ExtractDocumentFunctionArn}",
+      "ResultPath": "$.doc",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Next": "HasExpiryDate"
+    },
+    "HasExpiryDate": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.doc.found",
+          "BooleanEquals": false,
+          "Next": "EndNeedsDate"
+        }
+      ],
+      "Default": "SaveActiveItem"
+    },
+    "EndNeedsDate": {
+      "Type": "Succeed"
+    },
+    "SaveActiveItem": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${TableName}",
+        "Key": {
+          "PK": { "S.$": "States.Format('USER#{}', $.doc.email)" },
+          "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
+        },
+        "UpdateExpression": "SET itemId = :id, email = :em, #n = :nm, #t = :tp, provider = :pr, expiryDate = :ex, s3Key = :sk, #st = :st, executionArn = :ea, followUpCount = :fc, updatedAt = :ua, createdAt = if_not_exists(createdAt, :ua)",
+        "ExpressionAttributeNames": {
+          "#n": "name",
+          "#t": "type",
+          "#st": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":id": { "S.$": "$.doc.itemId" },
+          ":em": { "S.$": "$.doc.email" },
+          ":nm": { "S.$": "$.doc.name" },
+          ":tp": { "S.$": "$.doc.type" },
+          ":pr": { "S.$": "$.doc.provider" },
+          ":ex": { "S.$": "$.doc.expiryDate" },
+          ":sk": { "S.$": "$.doc.s3Key" },
+          ":st": { "S": "ACTIVE" },
+          ":ea": { "S.$": "$$.Execution.Id" },
+          ":fc": { "N.$": "States.Format('{}', $.doc.followUpCount)" },
+          ":ua": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "SetInitialMode"
+    },
+    "SetInitialMode": {
+      "Type": "Pass",
+      "Result": "initial",
+      "ResultPath": "$.mode",
+      "Next": "ComputeReminder"
+    },
+    "ComputeReminder": {
+      "Type": "Task",
+      "Resource": "${ComputeReminderFunctionArn}",
+      "Parameters": {
+        "expiryDate.$": "$.doc.expiryDate",
+        "mode.$": "$.mode"
+      },
+      "ResultPath": "$.schedule",
+      "Next": "WaitUntilReminder"
+    },
+    "WaitUntilReminder": {
+      "Type": "Wait",
+      "SecondsPath": "$.schedule.waitSeconds",
+      "Next": "CheckItemStatus"
+    },
+    "CheckItemStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName": "${TableName}",
+        "Key": {
+          "PK": { "S.$": "States.Format('USER#{}', $.doc.email)" },
+          "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
+        }
+      },
+      "ResultPath": "$.currentItem",
+      "Next": "IsItemStillActive"
+    },
+    "IsItemStillActive": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.currentItem.Item.status.S",
+          "StringEquals": "ACTIVE",
+          "Next": "CheckContinueAsNew"
+        }
+      ],
+      "Default": "EndStopped"
+    },
+    "EndStopped": {
+      "Type": "Succeed"
+    },
+    "CheckContinueAsNew": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.schedule.continueAsNew",
+          "BooleanEquals": true,
+          "Next": "ContinueAsNew"
+        }
+      ],
+      "Default": "SendReminderAndWait"
+    },
+    "ContinueAsNew": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::states:startExecution",
+      "Parameters": {
+        "StateMachineArn.$": "$$.StateMachine.Id",
+        "Input": {
+          "skipExtract": true,
+          "itemId.$": "$.doc.itemId",
+          "email.$": "$.doc.email",
+          "name.$": "$.doc.name",
+          "type.$": "$.doc.type",
+          "provider.$": "$.doc.provider",
+          "expiryDate.$": "$.doc.expiryDate",
+          "s3Key.$": "$.doc.s3Key",
+          "followUpCount.$": "$.doc.followUpCount"
+        }
+      },
+      "End": true
+    },
+    "SendReminderAndWait": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "TimeoutSecondsPath": "$.schedule.responseTimeoutSeconds",
+      "Parameters": {
+        "FunctionName": "${SendReminderFunctionArn}",
+        "Payload": {
+          "taskToken.$": "$$.Task.Token",
+          "email.$": "$.doc.email",
+          "itemId.$": "$.doc.itemId",
+          "name.$": "$.doc.name",
+          "provider.$": "$.doc.provider",
+          "expiryDate.$": "$.doc.expiryDate",
+          "followUpCount.$": "$.doc.followUpCount"
+        }
+      },
+      "ResultPath": "$.userResponse",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.Timeout"],
+          "ResultPath": "$.timeoutError",
+          "Next": "IncrementFollowUp"
+        }
+      ],
+      "Next": "BranchOnUserResponse"
+    },
+    "IncrementFollowUp": {
+      "Type": "Pass",
+      "Parameters": {
+        "found.$": "$.doc.found",
+        "itemId.$": "$.doc.itemId",
+        "email.$": "$.doc.email",
+        "name.$": "$.doc.name",
+        "type.$": "$.doc.type",
+        "provider.$": "$.doc.provider",
+        "expiryDate.$": "$.doc.expiryDate",
+        "s3Key.$": "$.doc.s3Key",
+        "followUpCount.$": "States.MathAdd($.doc.followUpCount, 1)"
+      },
+      "ResultPath": "$.doc",
+      "Next": "CheckFollowUpLimit"
+    },
+    "CheckFollowUpLimit": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.doc.followUpCount",
+          "NumericGreaterThanEquals": 5,
+          "Next": "MarkIgnored"
+        }
+      ],
+      "Default": "SetFollowUpMode"
+    },
+    "SetFollowUpMode": {
+      "Type": "Pass",
+      "Result": "followup",
+      "ResultPath": "$.mode",
+      "Next": "ComputeReminder"
+    },
+    "MarkIgnored": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${TableName}",
+        "Key": {
+          "PK": { "S.$": "States.Format('USER#{}', $.doc.email)" },
+          "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
+        },
+        "UpdateExpression": "SET #st = :st, followUpCount = :fc, updatedAt = :ua",
+        "ExpressionAttributeNames": {
+          "#st": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":st": { "S": "IGNORED" },
+          ":fc": { "N.$": "States.Format('{}', $.doc.followUpCount)" },
+          ":ua": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "End": true
+    },
+    "BranchOnUserResponse": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.userResponse.choice",
+          "StringEquals": "RENEWED_WITH_DATE",
+          "Next": "ApplyNewExpiryDate"
+        },
+        {
+          "Variable": "$.userResponse.choice",
+          "StringEquals": "RENEWED",
+          "Next": "MarkRenewed"
+        },
+        {
+          "Variable": "$.userResponse.choice",
+          "StringEquals": "SNOOZE",
+          "Next": "SetSnoozeMode"
+        }
+      ],
+      "Default": "MarkRenewed"
+    },
+    "ApplyNewExpiryDate": {
+      "Type": "Pass",
+      "Parameters": {
+        "found": true,
+        "itemId.$": "$.doc.itemId",
+        "email.$": "$.doc.email",
+        "name.$": "$.doc.name",
+        "type.$": "$.doc.type",
+        "provider.$": "$.doc.provider",
+        "expiryDate.$": "$.userResponse.newExpiryDate",
+        "s3Key.$": "$.doc.s3Key",
+        "followUpCount": 0
+      },
+      "ResultPath": "$.doc",
+      "Next": "SaveActiveItem"
+    },
+    "SetSnoozeMode": {
+      "Type": "Pass",
+      "Result": "snooze",
+      "ResultPath": "$.mode",
+      "Next": "ComputeReminder"
+    },
+    "MarkRenewed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${TableName}",
+        "Key": {
+          "PK": { "S.$": "States.Format('USER#{}', $.doc.email)" },
+          "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
+        },
+        "UpdateExpression": "SET #st = :st, updatedAt = :ua",
+        "ExpressionAttributeNames": {
+          "#st": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":st": { "S": "RENEWED" },
+          ":ua": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "End": true
+    }
+  }
+}
