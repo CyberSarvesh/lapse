@@ -28,7 +28,10 @@ Built for the **AWS Weekend Challenge: "No Pipeline, No Problem"**.
    ```powershell
    awslocal ses verify-email-identity --email-address noreply@lapse.local
    ```
-4. Open [web/index.html](web/index.html) in a browser and paste the `ApiUrl` stack output into the **API URL** field.
+4. Serve the frontend over local HTTPS and open `https://127.0.0.1:8443` (accept the self-signed cert in your browser), then paste the `ApiUrl` stack output into **Connection settings**:
+   ```powershell
+   python scripts/serve_web.py
+   ```
 
 ## Deploy to AWS
 
