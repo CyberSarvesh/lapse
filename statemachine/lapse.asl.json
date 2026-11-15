@@ -8,7 +8,7 @@
       "ResultPath": "$.doc",
       "Retry": [
         {
-          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
           "IntervalSeconds": 2,
           "MaxAttempts": 2,
           "BackoffRate": 2.0
@@ -60,6 +60,15 @@
         }
       },
       "ResultPath": null,
+      "Next": "RecordExecutionId"
+    },
+    "RecordExecutionId": {
+      "Type": "Pass",
+      "Comment": "This execution owns the item only while item.executionArn matches; older or duplicate executions end at their next status check.",
+      "Parameters": {
+        "id.$": "$$.Execution.Id"
+      },
+      "ResultPath": "$.self",
       "Next": "SetInitialMode"
     },
     "SetInitialMode": {
@@ -73,7 +82,8 @@
       "Resource": "${ComputeReminderFunctionArn}",
       "Parameters": {
         "expiryDate.$": "$.doc.expiryDate",
-        "mode.$": "$.mode"
+        "mode.$": "$.mode",
+        "executionStartTime.$": "$$.Execution.StartTime"
       },
       "ResultPath": "$.schedule",
       "Next": "WaitUntilReminder"
@@ -100,8 +110,21 @@
       "Type": "Choice",
       "Choices": [
         {
-          "Variable": "$.currentItem.Item.status.S",
-          "StringEquals": "ACTIVE",
+          "Variable": "$.currentItem.Item.executionArn.S",
+          "IsPresent": false,
+          "Next": "EndStopped"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.currentItem.Item.status.S",
+              "StringEquals": "ACTIVE"
+            },
+            {
+              "Variable": "$.currentItem.Item.executionArn.S",
+              "StringEqualsPath": "$.self.id"
+            }
+          ],
           "Next": "CheckContinueAsNew"
         }
       ],
@@ -135,7 +158,8 @@
           "provider.$": "$.doc.provider",
           "expiryDate.$": "$.doc.expiryDate",
           "s3Key.$": "$.doc.s3Key",
-          "followUpCount.$": "$.doc.followUpCount"
+          "followUpCount.$": "$.doc.followUpCount",
+          "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
         }
       },
       "End": true
@@ -157,10 +181,25 @@
         }
       },
       "ResultPath": "$.userResponse",
+      "Retry": [
+        {
+          "Comment": "SES throttling or transient Lambda errors; States.TaskFailed never matches States.Timeout.",
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
       "Catch": [
         {
           "ErrorEquals": ["States.Timeout"],
           "ResultPath": "$.timeoutError",
+          "Next": "IncrementFollowUp"
+        },
+        {
+          "Comment": "Reminder could not be sent even after retries: count it as a missed reminder so the item still ends (IGNORED) instead of failing the execution.",
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.reminderError",
           "Next": "IncrementFollowUp"
         }
       ],
@@ -209,15 +248,26 @@
           "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
         },
         "UpdateExpression": "SET #st = :st, followUpCount = :fc, updatedAt = :ua",
+        "ConditionExpression": "#st = :active AND executionArn = :me",
         "ExpressionAttributeNames": {
           "#st": "status"
         },
         "ExpressionAttributeValues": {
           ":st": { "S": "IGNORED" },
           ":fc": { "N.$": "States.Format('{}', $.doc.followUpCount)" },
-          ":ua": { "S.$": "$$.State.EnteredTime" }
+          ":ua": { "S.$": "$$.State.EnteredTime" },
+          ":active": { "S": "ACTIVE" },
+          ":me": { "S.$": "$$.Execution.Id" }
         }
       },
+      "Catch": [
+        {
+          "Comment": "Item was stopped or taken over by a newer execution; leave it alone.",
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "ResultPath": null,
+          "Next": "EndStopped"
+        }
+      ],
       "End": true
     },
     "BranchOnUserResponse": {
@@ -226,7 +276,7 @@
         {
           "Variable": "$.userResponse.choice",
           "StringEquals": "RENEWED_WITH_DATE",
-          "Next": "ApplyNewExpiryDate"
+          "Next": "RestartWithNewDate"
         },
         {
           "Variable": "$.userResponse.choice",
@@ -241,21 +291,26 @@
       ],
       "Default": "MarkRenewed"
     },
-    "ApplyNewExpiryDate": {
-      "Type": "Pass",
+    "RestartWithNewDate": {
+      "Type": "Task",
+      "Comment": "Each renewal cycle gets a fresh execution so the next wait (up to ~a year) never runs into the 1-year execution limit of this one (D13, D14).",
+      "Resource": "arn:aws:states:::states:startExecution",
       "Parameters": {
-        "found": true,
-        "itemId.$": "$.doc.itemId",
-        "email.$": "$.doc.email",
-        "name.$": "$.doc.name",
-        "type.$": "$.doc.type",
-        "provider.$": "$.doc.provider",
-        "expiryDate.$": "$.userResponse.newExpiryDate",
-        "s3Key.$": "$.doc.s3Key",
-        "followUpCount": 0
+        "StateMachineArn.$": "$$.StateMachine.Id",
+        "Input": {
+          "skipExtract": true,
+          "itemId.$": "$.doc.itemId",
+          "email.$": "$.doc.email",
+          "name.$": "$.doc.name",
+          "type.$": "$.doc.type",
+          "provider.$": "$.doc.provider",
+          "expiryDate.$": "$.userResponse.newExpiryDate",
+          "s3Key.$": "$.doc.s3Key",
+          "followUpCount": 0,
+          "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+        }
       },
-      "ResultPath": "$.doc",
-      "Next": "SaveActiveItem"
+      "End": true
     },
     "SetSnoozeMode": {
       "Type": "Pass",
@@ -273,14 +328,25 @@
           "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
         },
         "UpdateExpression": "SET #st = :st, updatedAt = :ua",
+        "ConditionExpression": "#st = :active AND executionArn = :me",
         "ExpressionAttributeNames": {
           "#st": "status"
         },
         "ExpressionAttributeValues": {
           ":st": { "S": "RENEWED" },
-          ":ua": { "S.$": "$$.State.EnteredTime" }
+          ":ua": { "S.$": "$$.State.EnteredTime" },
+          ":active": { "S": "ACTIVE" },
+          ":me": { "S.$": "$$.Execution.Id" }
         }
       },
+      "Catch": [
+        {
+          "Comment": "Item was stopped or taken over by a newer execution; leave it alone.",
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "ResultPath": null,
+          "Next": "EndStopped"
+        }
+      ],
       "End": true
     }
   }
