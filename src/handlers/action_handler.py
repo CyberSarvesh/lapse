@@ -9,9 +9,13 @@ import re
 from typing import Any
 from urllib.parse import parse_qs
 
+from botocore.exceptions import ClientError
+
 from common.aws_clients import get_sfn_client
-from common.db import consume_action_link, get_action_link
+from common.db import STATUS_ACTIVE, consume_action_link, get_action_link, get_item
 from common.http import html_response
+
+STALE_TOKEN_ERRORS = {"TaskTimedOut", "InvalidToken", "TaskDoesNotExist"}
 
 
 def _page(title: str, body_html: str) -> str:
@@ -116,6 +120,20 @@ def _handle_post(event: dict[str, Any]) -> dict[str, Any]:
     record = consume_action_link(action_id)
     if not record:
         return _expired_response()
+    # Both buttons of one email share a task token: retire the other one too.
+    if record.get("siblingId"):
+        consume_action_link(record["siblingId"])
+
+    # Stopped/renewed elsewhere since the email went out: don't revive the item.
+    item = get_item(record.get("email", ""), record.get("itemId", "")) if record.get("itemId") else None
+    if item is not None and item.get("status") != STATUS_ACTIVE:
+        return html_response(
+            410,
+            _page(
+                "Reminders Stopped",
+                "<h1>Nothing to do</h1><p>Reminders for this item were already stopped or completed.</p>",
+            ),
+        )
 
     choice = record["action"]
     if choice == "RENEWED" and new_expiry:
@@ -125,10 +143,17 @@ def _handle_post(event: dict[str, Any]) -> dict[str, Any]:
     else:
         choice_payload = {"choice": "SNOOZE"}
 
-    get_sfn_client().send_task_success(
-        taskToken=record["taskToken"],
-        output=json.dumps(choice_payload),
-    )
+    try:
+        get_sfn_client().send_task_success(
+            taskToken=record["taskToken"],
+            output=json.dumps(choice_payload),
+        )
+    except ClientError as err:
+        # The workflow already moved on (response window timed out, a newer email
+        # was sent, or the execution ended). Treat it like a used link, not a 500.
+        if err.response.get("Error", {}).get("Code") in STALE_TOKEN_ERRORS:
+            return _expired_response()
+        raise
 
     item_name = html.escape(record.get("itemName", "Your item"))
     if choice_payload["choice"] == "RENEWED_WITH_DATE":

@@ -24,8 +24,8 @@ def handler(event: dict[str, Any], _context: Any) -> None:
     renew_id = secrets.token_urlsafe(8)
     snooze_id = secrets.token_urlsafe(8)
 
-    put_action_link(renew_id, task_token, email, item_id, "RENEWED", item_name, expiry_date)
-    put_action_link(snooze_id, task_token, email, item_id, "SNOOZE", item_name, expiry_date)
+    put_action_link(renew_id, task_token, email, item_id, "RENEWED", item_name, expiry_date, sibling_id=snooze_id)
+    put_action_link(snooze_id, task_token, email, item_id, "SNOOZE", item_name, expiry_date, sibling_id=renew_id)
 
     api_base = os.environ["API_BASE_URL"].rstrip("/")
     renew_url = f"{api_base}/action?id={renew_id}"

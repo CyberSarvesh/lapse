@@ -95,14 +95,20 @@ def put_action_link(
     action: str,
     item_name: str,
     expiry_date: str,
+    sibling_id: str = "",
     ttl_seconds: int = 8 * 86400,
 ) -> None:
-    """Store a one-time action link record (8-day TTL)."""
+    """Store a one-time action link record (8-day TTL).
+
+    ``sibling_id`` is the other button from the same email. Both share one task
+    token, so using either link must invalidate the other.
+    """
     get_dynamodb_table().put_item(
         Item={
             "PK": action_pk(action_id),
             "SK": "TOKEN",
             "actionId": action_id,
+            "siblingId": sibling_id,
             "taskToken": task_token,
             "email": email.strip().lower(),
             "itemId": item_id,
