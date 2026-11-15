@@ -147,7 +147,7 @@ def get_action_link(action_id: str) -> dict[str, Any] | None:
     resp = get_dynamodb_table().get_item(
         Key={"PK": action_pk(action_id), "SK": "TOKEN"}
     )
-    return resp.get("Item")
+    return _unexpired(resp.get("Item"))
 
 
 def consume_action_link(action_id: str) -> dict[str, Any] | None:
@@ -157,6 +157,13 @@ def consume_action_link(action_id: str) -> dict[str, Any] | None:
             Key={"PK": action_pk(action_id), "SK": "TOKEN"},
             ReturnValues="ALL_OLD",
         )
-        return resp.get("Attributes")
+        return _unexpired(resp.get("Attributes"))
     except Exception:
         return None
+
+
+def _unexpired(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    """DynamoDB TTL deletes lazily (up to ~48 h late), so enforce ``ttl`` on read."""
+    if record and "ttl" in record and int(record["ttl"]) <= int(time.time()):
+        return None
+    return record
