@@ -6,6 +6,7 @@ import os
 import uuid
 from typing import Any
 
+from common.auth import authenticated_email
 from common.aws_clients import get_s3_client
 from common.db import (
     STATUS_PROCESSING,
@@ -29,11 +30,10 @@ ALLOWED_TYPES = {
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     """Generate a presigned S3 upload URL and seed the item + upload lookup."""
     params = event.get("queryStringParameters") or {}
-    email = (params.get("email") or "").strip().lower()
+    email = authenticated_email(event)
+    if not email:
+        return json_response(401, {"error": "Sign in first"})
     ext = (params.get("ext") or "jpg").strip().lower().lstrip(".")
-
-    if not email or "@" not in email:
-        return json_response(400, {"error": "Valid email query parameter is required"})
     if ext not in ALLOWED_TYPES:
         return json_response(400, {"error": f"Unsupported file extension: {ext}"})
 

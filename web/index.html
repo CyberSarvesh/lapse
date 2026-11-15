@@ -176,16 +176,24 @@
     </header>
 
     <div class="panel">
-      <label class="field-label" for="emailInput">Your Email</label>
-      <div class="row">
-        <div style="flex:1; min-width: 220px;">
-          <input id="emailInput" type="email" required autocomplete="email" placeholder="you@example.com" data-error="email-error">
-          <div id="email-error" class="error-msg">
-            <span role="img" aria-label="Error">❌</span> Enter an email address in the format you@example.com.
+      <form id="signInForm" novalidate>
+        <label class="field-label" for="emailInput">Sign in with your email</label>
+        <div class="row">
+          <div style="flex:1; min-width: 220px;">
+            <input id="emailInput" type="email" required autocomplete="email" placeholder="you@example.com" data-error="email-error">
+            <div id="email-error" class="error-msg">
+              <span role="img" aria-label="Error">❌</span> Enter an email address in the format you@example.com.
+            </div>
           </div>
+          <button id="signInBtn" type="submit">Email me a sign-in link</button>
         </div>
-        <button id="loadBtn" type="button">Load Items</button>
+        <div id="signInMsg" class="status-msg" role="status"></div>
+      </form>
+      <div id="signedInBar" class="row" style="justify-content: space-between;" hidden>
+        <span>Signed in as <strong id="signedInEmail"></strong></span>
+        <button id="signOutBtn" class="secondary" type="button">Sign out</button>
       </div>
+      <p class="status-msg" style="margin-top: 10px;">No password. Only you can see your items. Your document is deleted as soon as the date is read; Lapse keeps only the name, provider and date.</p>
       <details style="margin-top: 12px;">
         <summary>Connection settings</summary>
         <label class="field-label" for="apiUrlInput">API URL</label>
@@ -241,7 +249,7 @@
         <button id="refreshBtn" class="secondary" type="button">Refresh</button>
       </div>
       <div id="itemsList" class="items-list">
-        <p style="color:var(--muted); margin:0;">Enter your email above to view your items.</p>
+        <p style="color:var(--muted); margin:0;">Sign in above to see your items.</p>
       </div>
     </div>
   </div>
@@ -292,25 +300,124 @@
       }
     };
 
-    // Initialize email & API URL from query param or localStorage
+    // Storage can be unavailable (private mode, blocked site data): never let that break the page.
+    const store = {
+      get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+      set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+      del: (k) => { try { localStorage.removeItem(k); } catch {} },
+    };
+
+    // Initialize API URL from query param or storage
     const urlParams = new URLSearchParams(window.location.search);
     const paramApi = urlParams.get("api");
-    if (paramApi) localStorage.setItem("lapse_api_url", paramApi);
+    if (paramApi) store.set("lapse_api_url", paramApi);
+    const loginToken = urlParams.get("login");
+    if (loginToken || paramApi) {
+      // Keep the one-time token out of history, bookmarks and Referer headers.
+      history.replaceState(null, "", window.location.pathname);
+    }
 
-    emailInput.value = localStorage.getItem("lapse_email") || "";
-    const savedApi = localStorage.getItem("lapse_api_url");
+    emailInput.value = store.get("lapse_email") || "";
+    const savedApi = store.get("lapse_api_url");
     apiUrlInput.value = savedApi || (DEFAULT_API_URL.startsWith("__") ? "" : DEFAULT_API_URL);
 
     function getApiUrl() {
       const url = apiUrlInput.value.trim().replace(/\/+$/, "");
-      if (url) localStorage.setItem("lapse_api_url", url);
+      if (url) store.set("lapse_api_url", url);
       return url;
     }
 
-    function getEmail() {
+    const signInForm = document.getElementById("signInForm");
+    const signInMsg = document.getElementById("signInMsg");
+    const signedInBar = document.getElementById("signedInBar");
+
+    function session() {
+      const token = store.get("lapse_session");
+      return token ? { token, email: store.get("lapse_email") || "" } : null;
+    }
+
+    function renderAuth() {
+      const s = session();
+      signInForm.hidden = !!s;
+      signedInBar.hidden = !s;
+      document.getElementById("signedInEmail").textContent = s ? s.email : "";
+      if (!s) {
+        currentItems = [];
+        itemsList.innerHTML = '<p style="color:var(--muted); margin:0;">Sign in above to see your items.</p>';
+      }
+    }
+
+    function signOutLocal(message) {
+      store.del("lapse_session");
+      renderAuth();
+      if (message) setMsg(signInMsg, message, true);
+    }
+
+    // Every user-data call carries the session; a 401 means it expired.
+    async function apiFetch(path, options = {}) {
+      const api = getApiUrl();
+      if (!api) throw new Error('Open "Connection settings" and enter your API URL.');
+      const s = session();
+      if (!s) throw new Error("Sign in first.");
+      const res = await fetch(`${api}${path}`, {
+        ...options,
+        headers: { ...(options.headers || {}), Authorization: `Bearer ${s.token}` },
+      });
+      if (res.status === 401) {
+        signOutLocal("Your session expired. Sign in again.");
+        throw new Error("Sign in again.");
+      }
+      return res;
+    }
+
+    async function postJson(path, body) {
+      const res = await fetch(`${getApiUrl()}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { res, data };
+    }
+
+    signInForm.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (!emailInput.checkValidity()) { emailInput.focus(); return; }
+      if (!getApiUrl()) { setMsg(signInMsg, 'Open "Connection settings" and enter your API URL.', true); return; }
       const email = emailInput.value.trim().toLowerCase();
-      if (email) localStorage.setItem("lapse_email", email);
-      return email;
+      const btn = document.getElementById("signInBtn");
+      btn.disabled = true;
+      setMsg(signInMsg, "Sending…");
+      try {
+        const { res, data } = await postJson("/auth/start", { email });
+        if (!res.ok) throw new Error(data.error || "Could not send the link");
+        store.set("lapse_email", email);
+        if (data.devLoginUrl) {
+          signInMsg.innerHTML = `Local mode: <a href="${esc(data.devLoginUrl)}">open your sign-in link</a>.`;
+          signInMsg.classList.remove("error");
+        } else {
+          setMsg(signInMsg, `Check ${email} for a sign-in link. It expires in 15 minutes.`);
+        }
+      } catch (err) {
+        setMsg(signInMsg, err.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("signOutBtn").addEventListener("click", async () => {
+      try { await apiFetch("/auth/logout", { method: "POST" }); } catch {}
+      signOutLocal();
+    });
+
+    async function completeSignIn(token) {
+      if (!getApiUrl()) { setMsg(signInMsg, 'Open "Connection settings", enter your API URL, then use the link again.', true); return; }
+      setMsg(signInMsg, "Signing you in…");
+      const { res, data } = await postJson("/auth/verify", { token });
+      if (!res.ok) { setMsg(signInMsg, data.error || "Sign-in failed", true); return; }
+      store.set("lapse_session", data.token);
+      store.set("lapse_email", data.email);
+      setMsg(signInMsg, "");
     }
 
     function setMsg(el, text, isError = false) {
@@ -396,22 +503,15 @@
     let currentItems = [];
 
     async function loadItems() {
-      const api = getApiUrl();
-      const email = getEmail();
-      if (!api) {
-        itemsList.innerHTML = '<p style="color:var(--danger); margin:0;">Open "Connection settings" above and enter your API URL.</p>';
-        return;
-      }
-      if (!email || !emailInput.checkValidity()) return;
-
+      if (!session()) { renderAuth(); return; }
       try {
-        const res = await fetch(`${api}/items?email=${encodeURIComponent(email)}`);
+        const res = await apiFetch("/items");
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load items");
         currentItems = data.items || [];
         renderItems(currentItems);
       } catch (err) {
-        itemsList.innerHTML = `<p style="color:var(--danger); margin:0;">${esc(err.message)}</p>`;
+        if (session()) itemsList.innerHTML = `<p style="color:var(--danger); margin:0;">${esc(err.message)}</p>`;
       }
     }
 
@@ -473,36 +573,31 @@
 
     async function submitManualDate(ev, itemId, name) {
       ev.preventDefault();
-      const api = getApiUrl();
-      const email = getEmail();
       const expiryDate = ev.target.querySelector('input[type="date"]').value;
       const btn = ev.target.querySelector("button");
       btn.disabled = true;
-      await fetch(`${api}/items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, itemId, name, expiryDate }),
-      });
+      try {
+        await apiFetch("/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemId, name, expiryDate }),
+        });
+      } catch {}
       await loadItems();
     }
 
     async function stopReminders(btn, itemId) {
-      const api = getApiUrl();
-      const email = getEmail();
       btn.disabled = true;
       btn.textContent = "Stopping…";
-      await fetch(`${api}/items/${encodeURIComponent(itemId)}?email=${encodeURIComponent(email)}`, {
-        method: "DELETE",
-      });
+      try {
+        await apiFetch(`/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+      } catch {}
       await loadItems();
     }
 
     async function uploadFile(file) {
-      const api = getApiUrl();
-      const email = getEmail();
-      if (!api) { setMsg(uploadMsg, "Open Connection settings and enter your API URL.", true); return; }
-      if (!email || !emailInput.checkValidity()) {
-        setMsg(uploadMsg, "Enter your email address first.", true);
+      if (!session()) {
+        setMsg(uploadMsg, "Sign in first.", true);
         emailInput.focus();
         return;
       }
@@ -515,7 +610,7 @@
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
       setMsg(uploadMsg, "Requesting upload URL…");
       try {
-        const resp = await fetch(`${api}/upload-url?email=${encodeURIComponent(email)}&ext=${encodeURIComponent(ext)}`);
+        const resp = await apiFetch(`/upload-url?ext=${encodeURIComponent(ext)}`);
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || "Failed to get upload URL");
 
@@ -561,18 +656,15 @@
         manualForm.querySelector(":invalid")?.focus();
         return;
       }
-      const api = getApiUrl();
-      const email = getEmail();
-      if (!api || !email) { setMsg(manualMsg, "Enter your email and API URL first.", true); return; }
+      if (!session()) { setMsg(manualMsg, "Sign in first.", true); return; }
 
       manualBtn.disabled = true;
       setMsg(manualMsg, "Scheduling…");
       try {
-        const res = await fetch(`${api}/items`, {
+        const res = await apiFetch("/items", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email,
             name: document.getElementById("mName").value,
             type: document.getElementById("mType").value,
             provider: document.getElementById("mProvider").value,
@@ -591,15 +683,14 @@
       }
     });
 
-    emailInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") loadItems();
-    });
-    document.getElementById("loadBtn").addEventListener("click", loadItems);
     document.getElementById("refreshBtn").addEventListener("click", loadItems);
 
-    ensureTemporal().then(() => {
-      if (emailInput.value && apiUrlInput.value) loadItems();
-    });
+    (async () => {
+      if (loginToken) await completeSignIn(loginToken);
+      renderAuth();
+      await ensureTemporal();
+      if (session()) loadItems();
+    })();
   </script>
 </body>
 </html>

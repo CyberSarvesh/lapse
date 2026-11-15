@@ -29,11 +29,20 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: Enable local fallback for Bedrock when running in LocalStack
+  AppUrl:
+    Type: String
+    Default: ""
+    Description: >
+      Where the web page is served; sign-in links point here. Leave empty to use the
+      S3 website URL. For local development use https://127.0.0.1:8443.
   LambdaArchitecture:
     Type: String
     Default: arm64
     AllowedValues: ["arm64", "x86_64"]
     Description: Lambda CPU architecture (arm64 recommended on AWS)
+
+Conditions:
+  HasAppUrl: !Not [!Equals [!Ref AppUrl, ""]]
 
 Globals:
   Function:
@@ -123,7 +132,10 @@ Resources:
       CorsConfiguration:
         AllowOrigins: ["*"]
         AllowMethods: [GET, POST, DELETE, OPTIONS]
-        AllowHeaders: [Content-Type]
+        AllowHeaders: [Content-Type, Authorization]
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
 
   # ---------------------------------------------------------------------------
   # Workflow Lambdas
@@ -235,6 +247,38 @@ Resources:
   # ---------------------------------------------------------------------------
   # API Lambdas (D20 least-privilege)
   # ---------------------------------------------------------------------------
+  AuthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.auth.handler
+      Environment:
+        Variables:
+          APP_URL: !If [HasAppUrl, !Ref AppUrl, !GetAtt WebBucket.WebsiteURL]
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+        - SESCrudPolicy:
+            IdentityName: "*"
+      Events:
+        AuthStart:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /auth/start
+            Method: POST
+        AuthVerify:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /auth/verify
+            Method: POST
+        AuthLogout:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /auth/logout
+            Method: POST
+
   GetUploadUrlFunction:
     Type: AWS::Serverless::Function
     Properties:

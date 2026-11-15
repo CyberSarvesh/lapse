@@ -8,6 +8,7 @@ import re
 import uuid
 from typing import Any
 
+from common.auth import authenticated_email
 from common.aws_clients import get_sfn_client
 from common.db import (
     STATUS_ACTIVE,
@@ -22,12 +23,11 @@ from common.http import json_response, parse_json_body
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     """Create or update an item with a known expiryDate and start its Step Functions workflow."""
+    email = authenticated_email(event)
+    if not email:
+        return json_response(401, {"error": "Sign in first"})
     body = parse_json_body(event)
-    email = (body.get("email") or "").strip().lower()
     expiry_date = (body.get("expiryDate") or "").strip()
-
-    if not email or "@" not in email:
-        return json_response(400, {"error": "Valid email is required"})
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", expiry_date):
         return json_response(400, {"error": "expiryDate must be YYYY-MM-DD"})
 

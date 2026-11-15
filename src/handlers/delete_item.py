@@ -4,22 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
+from common.auth import authenticated_email
 from common.db import STATUS_DELETED, get_item, put_item, utc_now_iso
 from common.http import json_response
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     """Mark an item as DELETED so the waiting workflow exits cleanly after its Wait."""
-    path_params = event.get("pathParameters") or {}
-    query_params = event.get("queryStringParameters") or {}
-
-    item_id = (path_params.get("itemId") or "").strip()
-    email = (query_params.get("email") or "").strip().lower()
-
+    email = authenticated_email(event)
+    if not email:
+        return json_response(401, {"error": "Sign in first"})
+    item_id = ((event.get("pathParameters") or {}).get("itemId") or "").strip()
     if not item_id:
         return json_response(400, {"error": "itemId path parameter is required"})
-    if not email or "@" not in email:
-        return json_response(400, {"error": "Valid email query parameter is required"})
 
     existing = get_item(email, item_id)
     if not existing:
