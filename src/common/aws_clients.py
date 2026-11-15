@@ -11,6 +11,7 @@ from functools import lru_cache
 from typing import Any
 
 import boto3
+from botocore.config import Config
 
 
 def _endpoint_kwargs() -> dict[str, Any]:
@@ -45,5 +46,13 @@ def get_ses_client():
 
 @lru_cache(maxsize=1)
 def get_bedrock_client():
-    """Return a cached Bedrock Runtime client."""
-    return boto3.client("bedrock-runtime", **_endpoint_kwargs())
+    """Return a cached Bedrock Runtime client.
+
+    The read timeout stays well under the 60 s Lambda timeout so a slow model call
+    raises inside the handler (and falls back to NEEDS_DATE) instead of killing it.
+    """
+    return boto3.client(
+        "bedrock-runtime",
+        config=Config(read_timeout=40, connect_timeout=5, retries={"max_attempts": 2, "mode": "standard"}),
+        **_endpoint_kwargs(),
+    )

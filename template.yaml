@@ -11,8 +11,10 @@ Parameters:
     Description: SES-verified sender email address
   BedrockModelId:
     Type: String
-    Default: us.anthropic.claude-3-5-haiku-20241022-v1:0
-    Description: Vision-capable Amazon Bedrock model ID
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: >
+      Vision-capable Amazon Bedrock model ID or inference profile (must accept image
+      and PDF input, e.g. Claude Haiku 4.5 or Amazon Nova Lite). Enable model access first.
   DemoMode:
     Type: String
     Default: "false"

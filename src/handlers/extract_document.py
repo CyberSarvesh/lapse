@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,9 @@ from common.db import (
     put_item,
     utc_now_iso,
 )
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 EXTRACTION_PROMPT = (
     "You are reading a photo or PDF of a document (warranty, insurance policy, "
@@ -142,6 +146,8 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         else:
             extracted = _bedrock_extract(s3_key, body)
     except Exception:
+        # Never break the flow (D10), but make the failure visible in CloudWatch.
+        logger.exception("Extraction failed for %s; falling back to NEEDS_DATE", s3_key)
         extracted = {
             "found": False,
             "name": existing.get("name") or "Uploaded Document",
