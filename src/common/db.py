@@ -52,6 +52,26 @@ def put_item(item: dict[str, Any]) -> None:
     get_dynamodb_table().put_item(Item=item)
 
 
+STALE_PROCESSING_SECONDS = 15 * 60
+
+
+def _surface_stale_processing(item: dict[str, Any]) -> dict[str, Any]:
+    """Show an item stuck in PROCESSING (upload never finished, or extraction
+    crashed) as NEEDS_DATE so the user can type the date instead of waiting forever."""
+    if item.get("status") != STATUS_PROCESSING:
+        return item
+    try:
+        created = datetime.strptime(item.get("createdAt", ""), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return item
+    if (datetime.now(timezone.utc) - created).total_seconds() > STALE_PROCESSING_SECONDS:
+        name = item.get("name") or ""
+        if not name or name.startswith("Reading document"):
+            name = "Uploaded Document"
+        return {**item, "status": STATUS_NEEDS_DATE, "name": name}
+    return item
+
+
 def list_user_items(email: str) -> list[dict[str, Any]]:
     """Return all non-deleted items for a user, sorted by expiryDate ascending."""
     resp = get_dynamodb_table().query(
@@ -59,7 +79,9 @@ def list_user_items(email: str) -> list[dict[str, Any]]:
         & Key("SK").begins_with("ITEM#")
     )
     items = [
-        i for i in resp.get("Items", []) if i.get("status") != STATUS_DELETED
+        _surface_stale_processing(i)
+        for i in resp.get("Items", [])
+        if i.get("status") != STATUS_DELETED
     ]
     items.sort(key=lambda x: (x.get("expiryDate") or "9999-12-31", x.get("createdAt") or ""))
     return items
