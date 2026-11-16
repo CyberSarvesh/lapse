@@ -196,6 +196,10 @@ Resources:
   LapseStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
+      # Fixed name so AddOrUpdateItemFunction can build the ARN without a Ref.
+      # A Ref would close a loop: API -> AddOrUpdateItem -> state machine ->
+      # SendReminder -> API URL.
+      Name: !Sub "${AWS::StackName}-lapse"
       Type: STANDARD
       DefinitionUri: statemachine/lapse.asl.json
       DefinitionSubstitutions:
@@ -333,12 +337,12 @@ Resources:
       Handler: handlers.add_or_update_item.handler
       Environment:
         Variables:
-          STATE_MACHINE_ARN: !Ref LapseStateMachine
+          STATE_MACHINE_ARN: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AWS::StackName}-lapse"
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LapseTable
         - StepFunctionsExecutionPolicy:
-            StateMachineName: !GetAtt LapseStateMachine.Name
+            StateMachineName: !Sub "${AWS::StackName}-lapse"
       Events:
         AddOrUpdateItem:
           Type: HttpApi
