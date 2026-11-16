@@ -18,7 +18,11 @@ from common.db import (
     utc_now_iso,
 )
 from common.dates import check_future_expiry, lead_days
-from common.http import json_response, parse_json_body
+from common.http import clean_text, json_response, parse_json_body
+
+MAX_NAME = 120  # matches the form's maxlength
+MAX_TYPE = 40
+MAX_ITEM_ID = 64
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -27,13 +31,16 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if not email:
         return json_response(401, {"error": "Sign in first"})
     body = parse_json_body(event)
-    expiry_date = (body.get("expiryDate") or "").strip()
+    expiry_date = clean_text(body.get("expiryDate"), 10)
     date_error = check_future_expiry(expiry_date)
     if date_error:
         return json_response(400, {"error": date_error})
 
-    item_id = (body.get("itemId") or "").strip() or uuid.uuid4().hex[:12]
-    existing = get_item(email, item_id) or {}
+    item_id = clean_text(body.get("itemId"), MAX_ITEM_ID)
+    existing = (get_item(email, item_id) if item_id else None) or {}
+    if not existing:
+        # Never let the client choose the id of a new item.
+        item_id = uuid.uuid4().hex[:12]
     now = utc_now_iso()
 
     item = {
@@ -41,9 +48,10 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "SK": item_sk(item_id),
         "itemId": item_id,
         "email": email,
-        "name": (body.get("name") or existing.get("name") or "Untitled Item").strip(),
-        "type": (body.get("type") or existing.get("type") or "other").strip(),
-        "provider": (body.get("provider") or existing.get("provider") or "").strip(),
+        "name": clean_text(body.get("name"), MAX_NAME) or existing.get("name") or "Untitled Item",
+        "type": clean_text(body.get("type"), MAX_TYPE).lower() or existing.get("type") or "other",
+        # An explicitly empty provider clears it; a missing one keeps what was there.
+        "provider": clean_text(body["provider"], MAX_NAME) if "provider" in body else existing.get("provider") or "",
         "expiryDate": expiry_date,
         "s3Key": existing.get("s3Key", ""),
         "status": STATUS_ACTIVE,

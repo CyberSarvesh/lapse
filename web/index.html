@@ -2,17 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <title>Lapse — Never miss a renewal</title>
   <meta name="description" content="Snap a warranty, insurance policy, passport or subscription. Lapse reads the expiry date and reminds you before it lapses.">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <meta name="theme-color" content="#0f766e">
+  <meta name="theme-color" content="#0f766e" id="themeColor">
   <meta name="apple-mobile-web-app-title" content="Lapse">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230f766e'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='none' stroke='white' stroke-width='2.6'/%3E%3Cpath d='M16 11v5.2l3.4 2' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <script>
+    // Apply a saved light/dark choice before the first paint.
+    try { var t = localStorage.getItem("lapse_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
   <style>
     :root {
+      color-scheme: light;
       --bg: #f6f5f1;
       --bg-soft: #efede7;
       --card: #ffffff;
@@ -33,65 +38,80 @@
       --shadow-sm: 0 1px 2px rgba(22, 32, 30, .05);
       --shadow: 0 1px 2px rgba(22, 32, 30, .04), 0 8px 24px -12px rgba(22, 32, 30, .14);
       --shadow-lg: 0 24px 60px -20px rgba(22, 32, 30, .35);
-      --radius: 14px;
+      --radius: 16px;
       --radius-sm: 10px;
+      --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+      --ease: cubic-bezier(.2, .8, .2, 1);
     }
+    /* Dark palette: system preference (unless overridden), the manual toggle, and
+       "inverse" surfaces such as the Next up card, which is dark in both themes. */
     @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0f1413;
-        --bg-soft: #161c1b;
-        --card: #18201e;
-        --text: #e8eeec;
-        --muted: #9fadaa;
-        --faint: #74827f;
-        --border: #263130;
-        --border-strong: #34413f;
-        --accent: #2dd4bf;
-        --accent-hover: #5eead4;
-        --accent-soft: #123a36;
-        --accent-ink: #062320;
-        --ok: #4ade80;      --ok-soft: #12301d;
-        --warn: #fbbf24;    --warn-soft: #36290c;
-        --danger: #fb923c;  --danger-soft: #3a1d10;
-        --info: #93b4ff;    --info-soft: #18264a;
-        --gray: #9fadaa;    --gray-soft: #222b29;
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #0f1413; --bg-soft: #161c1b; --card: #18201e; --text: #e8eeec; --muted: #9fadaa; --faint: #74827f;
+        --border: #263130; --border-strong: #34413f;
+        --accent: #2dd4bf; --accent-hover: #5eead4; --accent-soft: #123a36; --accent-ink: #062320;
+        --ok: #4ade80; --ok-soft: #12301d; --warn: #fbbf24; --warn-soft: #36290c;
+        --danger: #fb923c; --danger-soft: #3a1d10; --info: #93b4ff; --info-soft: #18264a;
+        --gray: #9fadaa; --gray-soft: #222b29;
         --shadow-sm: none;
         --shadow: 0 1px 0 rgba(255,255,255,.02), 0 10px 30px -14px rgba(0,0,0,.6);
         --shadow-lg: 0 24px 60px -20px rgba(0,0,0,.8);
       }
     }
+    :root[data-theme="dark"], .inverse {
+      color-scheme: dark;
+      --bg: #0f1413; --bg-soft: #161c1b; --card: #18201e; --text: #e8eeec; --muted: #9fadaa; --faint: #74827f;
+      --border: #263130; --border-strong: #34413f;
+      --accent: #2dd4bf; --accent-hover: #5eead4; --accent-soft: #123a36; --accent-ink: #062320;
+      --ok: #4ade80; --ok-soft: #12301d; --warn: #fbbf24; --warn-soft: #36290c;
+      --danger: #fb923c; --danger-soft: #3a1d10; --info: #93b4ff; --info-soft: #18264a;
+      --gray: #9fadaa; --gray-soft: #222b29;
+      --shadow-sm: none;
+      --shadow: 0 1px 0 rgba(255,255,255,.02), 0 10px 30px -14px rgba(0,0,0,.6);
+      --shadow-lg: 0 24px 60px -20px rgba(0,0,0,.8);
+    }
 
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
-    html { -webkit-text-size-adjust: 100%; }
+    html { -webkit-text-size-adjust: 100%; scroll-padding-top: 76px; }
     body {
       margin: 0;
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       font-size: 15px;
       line-height: 1.5;
-      background: var(--bg);
+      background:
+        radial-gradient(900px 420px at 85% -120px, color-mix(in srgb, var(--accent) 11%, transparent), transparent 70%) no-repeat,
+        var(--bg);
       color: var(--text);
       -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
     }
+    main { flex: 1; }
     a { color: var(--accent); }
     h1, h2, h3 { line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
     p { margin: 0; }
-    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); }
     .muted { color: var(--muted); }
     .tabular { font-variant-numeric: tabular-nums; }
+    .label { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
     svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    kbd { font: inherit; font-size: 11.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border-strong); border-bottom-width: 2px; background: var(--card); color: var(--muted); }
+    ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
 
     /* ---------- Top bar ---------- */
-    .topbar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid transparent; }
+    .topbar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid transparent; transition: border-color .2s; }
     .topbar.scrolled { border-bottom-color: var(--border); }
     .topbar .wrap { display: flex; align-items: center; justify-content: space-between; height: 62px; gap: 12px; }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 750; font-size: 19px; letter-spacing: -0.02em; color: var(--text); text-decoration: none; }
-    .brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
+    .brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; box-shadow: inset 0 -2px 0 rgba(0,0,0,.14); }
     .brand-mark svg { width: 20px; height: 20px; stroke-width: 2.4; }
+    .top-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .account { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 14px; flex: none; }
     .account-email { font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
-    @media (max-width: 520px) { .account-email { display: none; } .dash-actions { width: 100%; } .dash-actions .btn { flex: 1; } }
+    @media (max-width: 560px) { .account-email, #signOutBtn span { display: none; } }
 
     /* ---------- Buttons & inputs ---------- */
     .btn {
@@ -104,7 +124,8 @@
     }
     .btn:hover { background: var(--accent-hover); }
     .btn:active { transform: translateY(1px); }
-    .btn:focus-visible, .chip-btn:focus-visible, .tab:focus-visible, .dropzone:focus-visible, .type-opt input:focus-visible + span {
+    :is(.btn, .chip-btn, .tab, .dropzone, .stat, .tl-month, .filter-chip, .linklike, .quick-dates button):focus-visible,
+    :is(.type-opt, .seg) input:focus-visible + span {
       outline: 2px solid var(--accent); outline-offset: 2px;
     }
     .btn.ghost { background: var(--card); color: var(--text); border-color: var(--border); box-shadow: var(--shadow-sm); }
@@ -120,7 +141,7 @@
     .btn .spinner { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    label.lbl { display: block; font-size: 13px; font-weight: 620; margin-bottom: 6px; }
+    label.lbl, span.lbl { display: block; font-size: 13px; font-weight: 620; margin-bottom: 6px; }
     .input, select.input {
       width: 100%; font: inherit; font-size: 15px; color: var(--text);
       background: var(--card); border: 1px solid var(--border-strong); border-radius: 10px;
@@ -138,20 +159,22 @@
     .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
 
     /* ---------- Landing ---------- */
-    .hero { display: grid; grid-template-columns: 1.15fr .85fr; gap: 48px; align-items: center; padding: 56px 0 40px; }
-    @media (max-width: 860px) { .hero { grid-template-columns: 1fr; gap: 32px; padding: 32px 0 24px; } }
-    .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 620; color: var(--accent); background: var(--accent-soft); padding: 5px 11px; border-radius: 999px; margin-bottom: 18px; }
-    .hero h1 { font-size: clamp(34px, 5.4vw, 54px); font-weight: 780; letter-spacing: -0.035em; line-height: 1.05; }
-    .hero h1 em { font-style: normal; color: var(--accent); }
-    .hero .lede { font-size: 18px; color: var(--muted); margin-top: 18px; max-width: 520px; }
-    .ticks { list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 12px; }
+    .hero { display: grid; grid-template-columns: 1.15fr .85fr; gap: 56px; align-items: center; padding: 64px 0 48px; }
+    @media (max-width: 860px) { .hero { grid-template-columns: 1fr; gap: 32px; padding: 32px 0 28px; } }
+    .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 620; color: var(--accent); background: var(--accent-soft); padding: 5px 11px; border-radius: 999px; margin-bottom: 20px; }
+    .eyebrow svg { width: 15px; height: 15px; }
+    .hero h1 { font-family: var(--display); font-size: clamp(38px, 6vw, 62px); font-weight: 600; letter-spacing: -0.03em; line-height: 1.02; text-wrap: balance; }
+    .hero h1 em { font-style: italic; color: var(--accent); }
+    .hero .lede { font-size: 18px; color: var(--muted); margin-top: 20px; max-width: 520px; text-wrap: pretty; }
+    .ticks { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 14px; }
     .ticks li { display: flex; gap: 12px; align-items: flex-start; }
     .ticks .tick { width: 26px; height: 26px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex: none; margin-top: 1px; }
     .ticks .tick svg { width: 15px; height: 15px; stroke-width: 2.4; }
     .ticks strong { display: block; font-size: 15px; }
     .ticks span { color: var(--muted); font-size: 14px; }
 
-    .signin-card { padding: 28px; }
+    .signin-card { padding: 28px; position: relative; }
+    .signin-card::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 55%, transparent), transparent 45%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
     .signin-card h2 { font-size: 22px; letter-spacing: -0.02em; }
     .signin-card .sub { color: var(--muted); margin: 6px 0 22px; font-size: 14px; }
     .signin-card .btn { margin-top: 14px; }
@@ -168,70 +191,70 @@
 
     .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 8px 0 56px; }
     @media (max-width: 760px) { .steps { grid-template-columns: 1fr; } }
-    .step { padding: 22px; }
-    .step-num { font-size: 12px; font-weight: 700; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
+    .step { padding: 22px; display: flex; flex-direction: column; }
     .step h3 { font-size: 17px; margin: 10px 0 6px; }
     .step p { color: var(--muted); font-size: 14px; }
-    .mock-mail { margin-top: 14px; border: 1px dashed var(--border-strong); border-radius: 10px; padding: 10px 12px; font-size: 13px; background: var(--bg); }
+    .step .mock { margin-top: auto; padding-top: 16px; }
+    .mock-box { border: 1px dashed var(--border-strong); border-radius: 10px; padding: 12px; font-size: 13px; background: var(--bg); min-height: 86px; }
+    .mock-doc { position: relative; overflow: hidden; display: grid; gap: 7px; align-content: center; }
+    .mock-doc i { display: block; height: 6px; border-radius: 3px; background: var(--border-strong); opacity: .7; }
+    .mock-doc i:nth-child(1) { width: 46%; height: 8px; opacity: 1; }
+    .mock-doc i:nth-child(2) { width: 88%; }
+    .mock-doc i:nth-child(3) { width: 72%; }
+    .mock-doc b { font-size: 11.5px; font-weight: 650; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 5px; justify-self: start; }
+    .mock-doc::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 26px; background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--accent) 22%, transparent)); border-bottom: 2px solid var(--accent); animation: scan 2.8s ease-in-out infinite; }
+    @keyframes scan { 0%, 100% { transform: translateY(-30px); } 50% { transform: translateY(90px); } }
+    .mock-fields { display: grid; gap: 7px; align-content: center; }
+    .mock-fields div { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .mock-fields span { color: var(--muted); }
+    .mock-fields strong { display: inline-flex; align-items: center; gap: 5px; }
+    .mock-fields svg { width: 14px; height: 14px; color: var(--ok); stroke-width: 2.6; }
     .mock-mail .mm-btns { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
     .mock-mail .mm-btns span { font-size: 12px; font-weight: 620; padding: 4px 9px; border-radius: 7px; background: var(--card); border: 1px solid var(--border); }
     .mock-mail .mm-btns span.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
     /* ---------- Dashboard ---------- */
-    .dash-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 30px 0 20px; }
-    .dash-head h1 { font-size: 28px; font-weight: 760; letter-spacing: -0.03em; }
-    .dash-head p { color: var(--muted); margin-top: 4px; }
+    .dash-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 34px 0 22px; }
+    .dash-head h1 { font-family: var(--display); font-size: clamp(28px, 4.4vw, 36px); font-weight: 600; letter-spacing: -0.025em; }
+    .dash-head p { color: var(--muted); margin-top: 6px; }
     .dash-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    @media (max-width: 520px) { .dash-actions { width: 100%; } .dash-actions .btn { flex: 1; } }
 
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
-    .stat { padding: 16px 18px; text-align: left; font: inherit; color: inherit; cursor: pointer; transition: border-color .15s, transform .1s; }
-    .stat:hover { border-color: var(--border-strong); }
-    .stat.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
-    .stat .k { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 7px; }
-    .stat .k .dot { width: 8px; height: 8px; border-radius: 50%; }
-    .stat .v { font-size: 30px; font-weight: 760; letter-spacing: -0.03em; margin-top: 4px; }
-
-    .channels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
-    @media (max-width: 860px) { .channels { grid-template-columns: 1fr; } }
-    .channel { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
-    .ch-ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--tone-soft); color: var(--tone); flex: none; }
-    .ch-main { flex: 1; min-width: 0; }
-    .ch-title { font-weight: 650; font-size: 14.5px; }
-    .ch-sub { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
-    .ch-act { display: flex; gap: 6px; flex: none; }
-    .grid-2 { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; margin-top: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
     @media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } }
 
-    .spotlight { padding: 22px; display: flex; flex-direction: column; gap: 16px; position: relative; overflow: hidden; }
-    .spotlight .label { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
-    .spot-body { display: flex; align-items: center; gap: 20px; }
-    .ring { width: 108px; height: 108px; flex: none; position: relative; }
+    .spotlight { padding: 24px; display: flex; flex-direction: column; gap: 18px; position: relative; overflow: hidden; border-radius: var(--radius); color: var(--text); background: radial-gradient(420px 260px at 100% 0%, rgba(45, 212, 191, .22), transparent 70%), linear-gradient(140deg, #114440, #0a2826); border: 1px solid rgba(255,255,255,.07); box-shadow: var(--shadow); min-height: 210px; }
+    .spot-body { display: flex; align-items: center; gap: 22px; flex: 1; }
+    .ring { width: 116px; height: 116px; flex: none; position: relative; }
     .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-    .ring .track { stroke: var(--bg-soft); }
-    .ring .bar { transition: stroke-dashoffset .8s cubic-bezier(.2,.8,.2,1); }
+    .ring .track { stroke: rgba(255,255,255,.1); }
+    .ring .bar { transition: stroke-dashoffset .9s var(--ease); }
     .ring .center { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; line-height: 1; }
-    .ring .center b { font-size: 30px; font-weight: 780; letter-spacing: -0.03em; display: block; }
+    .ring .center b { font-size: 32px; font-weight: 780; letter-spacing: -0.03em; display: block; }
     .ring .center small { font-size: 12px; color: var(--muted); display: block; margin-top: 4px; }
-    .spot-info h2 { font-size: 21px; letter-spacing: -0.02em; }
+    .spot-info { min-width: 0; }
+    .spot-info h2 { font-size: 22px; letter-spacing: -0.02em; overflow-wrap: anywhere; }
     .spot-info p { color: var(--muted); margin-top: 4px; font-size: 14px; }
-    .spot-empty { color: var(--muted); font-size: 14px; }
+    .spot-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    .spot-empty { color: var(--muted); font-size: 14px; display: flex; align-items: center; flex: 1; }
+    @media (max-width: 420px) { .spot-body { gap: 16px; } .ring { width: 92px; height: 92px; } .ring .center b { font-size: 26px; } }
 
     .dropzone {
       padding: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px;
-      border: 2px dashed var(--border-strong); border-radius: var(--radius); background: var(--card);
-      cursor: pointer; transition: border-color .15s, background-color .15s; min-height: 200px;
+      border: 2px dashed var(--border-strong); border-radius: var(--radius); background: color-mix(in srgb, var(--card) 70%, transparent);
+      cursor: pointer; transition: border-color .15s, background-color .15s, transform .15s; min-height: 210px;
     }
-    .dropzone:hover { border-color: var(--accent); }
-    .dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
-    .dz-icon { width: 52px; height: 52px; border-radius: 15px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; }
+    .dropzone:hover { border-color: var(--accent); background: var(--card); }
+    .dropzone:hover .dz-icon { transform: translateY(-2px) rotate(-4deg); }
+    .dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); transform: scale(1.01); }
+    .dz-icon { width: 52px; height: 52px; border-radius: 15px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; transition: transform .2s var(--ease); }
     .dz-icon svg { width: 26px; height: 26px; }
     .dropzone strong { font-size: 16px; }
     .dropzone .muted { font-size: 13px; }
-    .dropzone.busy { cursor: default; border-style: solid; border-color: var(--border); }
+    .dropzone.busy { cursor: default; border-style: solid; border-color: var(--border); background: var(--card); }
     .progress-steps { width: 100%; max-width: 360px; display: grid; gap: 10px; text-align: left; }
     .pstep { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--faint); }
-    .pstep .pdot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-strong); display: grid; place-items: center; flex: none; }
+    .pstep .pdot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-strong); display: grid; place-items: center; flex: none; font-size: 12px; font-weight: 700; }
     .pstep.doing { color: var(--text); font-weight: 600; }
     .pstep.doing .pdot { border-color: var(--accent); border-right-color: transparent; animation: spin .8s linear infinite; }
     .pstep.done { color: var(--muted); }
@@ -241,29 +264,62 @@
     .bar-track { height: 6px; background: var(--bg-soft); border-radius: 99px; overflow: hidden; margin-top: 2px; }
     .bar-fill { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
 
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+    @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+    .stat { padding: 14px 18px; text-align: left; font: inherit; color: inherit; cursor: pointer; transition: border-color .15s, transform .15s var(--ease), box-shadow .15s; }
+    .stat:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+    .stat.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+    .stat .k { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+    .stat .k .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .stat .v { font-size: 28px; font-weight: 760; letter-spacing: -0.03em; margin-top: 2px; }
+
+    /* ---------- Year ahead ---------- */
+    .timeline { margin-top: 16px; padding: 18px 18px 12px; }
+    .tl-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    .tl-head .muted { font-size: 13px; }
+    .tl-track { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; margin-top: 10px; }
+    .tl-month { font: inherit; color: var(--muted); background: none; border: 0; border-radius: 10px; padding: 6px 0 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; transition: background-color .15s; }
+    .tl-month:hover { background: var(--bg-soft); }
+    .tl-month.active { background: var(--accent-soft); color: var(--accent); }
+    .tl-month:disabled { cursor: default; background: none; }
+    .tl-dots { height: 58px; display: flex; flex-direction: column-reverse; align-items: center; gap: 4px; position: relative; width: 100%; }
+    .tl-dots::before { content: ""; position: absolute; bottom: 0; left: 50%; width: 1px; height: 100%; background: linear-gradient(to top, var(--border), transparent); }
+    .tl-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 0 3px var(--card); position: relative; flex: none; }
+    .tl-month.active .tl-dot { box-shadow: 0 0 0 3px var(--accent-soft); }
+    .tl-more { font-size: 10.5px; font-weight: 700; color: var(--muted); position: relative; background: var(--card); line-height: 1; padding: 1px 0; }
+    .tl-label { font-size: 12px; font-weight: 600; line-height: 1; }
+    .tl-month.now .tl-label { color: var(--text); font-weight: 750; }
+    .tl-year { font-size: 10px; color: var(--faint); line-height: 1; height: 10px; }
+    @media (max-width: 480px) { .tl-label { font-size: 10.5px; } .timeline { padding: 16px 10px 10px; } .tl-head { padding: 0 6px; } }
+
     /* ---------- Toolbar & list ---------- */
-    .list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 34px 0 14px; }
-    .list-head h2 { font-size: 20px; letter-spacing: -0.02em; }
+    .list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 36px 0 14px; }
+    .list-head h2, .section-title { font-size: 20px; letter-spacing: -0.02em; }
     .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .tabs { display: inline-flex; background: var(--bg-soft); padding: 4px; border-radius: 11px; gap: 2px; flex-wrap: wrap; }
-    .tab { font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; border: 0; padding: 6px 11px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .tab { font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; border: 0; padding: 6px 11px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: color .15s, background-color .15s; }
     .tab:hover { color: var(--text); }
     .tab[aria-selected="true"] { background: var(--card); color: var(--text); box-shadow: var(--shadow-sm); }
     .tab .n { font-size: 11.5px; background: var(--border); color: var(--muted); padding: 0 6px; border-radius: 99px; min-width: 18px; text-align: center; }
     .search { position: relative; }
     .search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--faint); width: 16px; height: 16px; }
     .search .input { padding: 8px 12px 8px 34px; font-size: 14px; width: 210px; }
-    @media (max-width: 560px) { .toolbar { width: 100%; } .tabs { width: 100%; } .tab { flex: 1; justify-content: center; } .search { flex: 1; } .search .input { width: 100%; } }
+    .search kbd { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+    .search .input:focus ~ kbd, .search .input:not(:placeholder-shown) ~ kbd { display: none; }
+    @media (hover: none), (max-width: 560px) { .search kbd, .kbd-hint { display: none; } }
+    @media (max-width: 560px) { .toolbar { width: 100%; } .tabs { width: 100%; } .tab { flex: 1; justify-content: center; padding: 6px 4px; } .search { flex: 1; } .search .input { width: 100%; } }
+    .filter-chip { font: inherit; font-size: 13px; font-weight: 620; display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; border-radius: 99px; border: 0; background: var(--accent-soft); color: var(--accent); cursor: pointer; }
+    .filter-chip svg { width: 14px; height: 14px; stroke-width: 2.4; }
 
     .group { margin-bottom: 22px; }
-    .group-title { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); margin: 0 0 10px 2px; display: flex; align-items: center; gap: 8px; }
+    .group-title { margin: 0 0 10px 2px; display: flex; align-items: center; gap: 8px; }
     .group-title .count { font-weight: 600; letter-spacing: 0; text-transform: none; }
     .items { display: grid; gap: 10px; }
 
-    .item { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; position: relative; animation: rise .35s cubic-bezier(.2,.8,.2,1) both; }
-    .item:has(details[open]) { z-index: 25; }
+    .item { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; position: relative; animation: rise .35s var(--ease) both; transition: border-color .15s, box-shadow .15s; }
+    .item:hover { border-color: var(--border-strong); }
+    .item:has(details[open]) { z-index: 15; }
     @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-    @media (prefers-reduced-motion: reduce) { .item, .toast, dialog { animation: none !important; } .ring .bar { transition: none; } }
     .item::before { content: ""; position: absolute; left: -1px; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--tone, transparent); }
     .type-ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--tone-soft, var(--gray-soft)); color: var(--tone, var(--gray)); }
     .type-ico svg { width: 22px; height: 22px; }
@@ -271,11 +327,14 @@
     .item-name { font-weight: 660; font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .item-sub { font-size: 13px; color: var(--muted); margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     .item-sub .sep { color: var(--border-strong); }
+    .item-sub .bell { display: inline-flex; align-items: center; gap: 4px; }
+    .item-sub .bell svg { width: 13px; height: 13px; }
     .item-right { display: flex; align-items: center; gap: 10px; }
     .countdown { text-align: right; line-height: 1.1; min-width: 70px; }
     .countdown b { font-size: 20px; font-weight: 760; letter-spacing: -0.02em; color: var(--tone, var(--text)); display: block; }
     .countdown small { font-size: 12px; color: var(--muted); }
-    .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 99px; background: var(--tone-soft, var(--gray-soft)); color: var(--tone, var(--gray)); white-space: nowrap; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 99px; background: var(--tone-soft, var(--gray-soft)); color: var(--tone, var(--gray)); white-space: nowrap; vertical-align: middle; }
+    .pill svg { width: 13px; height: 13px; stroke-width: 2.6; }
     .pill .pulse { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.2s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity: .3; } }
 
@@ -303,11 +362,11 @@
     .menu { position: relative; }
     .menu > summary { list-style: none; }
     .menu > summary::-webkit-details-marker { display: none; }
-    .chip-btn { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; color: var(--muted); cursor: pointer; border: 1px solid transparent; background: transparent; }
+    .chip-btn { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; color: var(--muted); cursor: pointer; border: 1px solid transparent; background: transparent; padding: 0; transition: background-color .15s, color .15s; }
     .chip-btn:hover, .menu[open] > .chip-btn { background: var(--bg-soft); color: var(--text); }
-    .menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 210px; padding: 6px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); }
+    .menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 220px; padding: 6px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); animation: pop .16s var(--ease); transform-origin: top right; }
     .menu-list button, .menu-list a { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px 10px; font: inherit; font-size: 14px; color: var(--text); background: none; border: 0; border-radius: 8px; cursor: pointer; text-decoration: none; text-align: left; }
-    .menu-list button:hover, .menu-list a:hover { background: var(--bg-soft); }
+    .menu-list button:hover, .menu-list a:hover, .menu-list :focus-visible { background: var(--bg-soft); outline: none; }
     .menu-list .danger-item { color: var(--danger); }
     .menu-list hr { border: 0; border-top: 1px solid var(--border); margin: 5px 4px; }
     .menu-list svg { width: 16px; height: 16px; }
@@ -316,18 +375,38 @@
     .empty .dz-icon { margin: 0 auto 14px; }
     .empty h3 { font-size: 18px; }
     .empty p { color: var(--muted); margin: 6px auto 18px; max-width: 360px; font-size: 14px; }
+    .empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
     .skeleton { height: 74px; border-radius: var(--radius); background: linear-gradient(90deg, var(--bg-soft), var(--card), var(--bg-soft)); background-size: 200% 100%; animation: shimmer 1.3s linear infinite; border: 1px solid var(--border); }
     @keyframes shimmer { to { background-position: -200% 0; } }
 
+    /* ---------- Reminder channels ---------- */
+    .section-title { margin: 36px 0 4px; }
+    .section-sub { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+    .channels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    @media (max-width: 860px) { .channels { grid-template-columns: 1fr; } }
+    .channel { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+    .ch-ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--tone-soft); color: var(--tone); flex: none; }
+    .ch-main { flex: 1; min-width: 0; }
+    .ch-title { font-weight: 650; font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
+    .ch-sub { font-size: 12.5px; color: var(--muted); line-height: 1.35; margin-top: 2px; }
+    .ch-act { display: flex; gap: 6px; flex: none; }
+
     /* ---------- Dialog ---------- */
-    dialog { border: 0; padding: 0; border-radius: 18px; background: var(--card); color: var(--text); box-shadow: var(--shadow-lg); width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 32px); animation: pop .2s cubic-bezier(.2,.8,.2,1); }
-    dialog::backdrop { background: rgba(10, 16, 15, .45); backdrop-filter: blur(2px); }
+    dialog { border: 0; padding: 0; border-radius: 18px; background: var(--card); color: var(--text); box-shadow: var(--shadow-lg); width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); animation: pop .22s var(--ease); }
+    dialog::backdrop { background: rgba(10, 16, 15, .5); backdrop-filter: blur(3px); animation: fade .2s; }
     @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
-    .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px 0; }
+    @keyframes fade { from { opacity: 0; } }
+    @keyframes sheet { from { transform: translateY(40px); opacity: 0; } }
+    .dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px 0; }
     .dlg-head h2 { font-size: 19px; }
     .dlg-body { padding: 18px 22px; }
     .dlg-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 0 22px 20px; }
+    @media (max-width: 560px) {
+      /* Bottom sheet: thumbs reach the buttons. */
+      dialog { margin: auto 0 0; width: 100vw; max-width: none; border-radius: 20px 20px 0 0; animation: sheet .26s var(--ease); padding-bottom: env(safe-area-inset-bottom); }
+      .dlg-foot .btn { flex: 1; }
+    }
     .type-picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
     @media (max-width: 460px) { .type-picker { grid-template-columns: repeat(3, 1fr); } }
     .type-opt { position: relative; }
@@ -344,23 +423,28 @@
     .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
     .seg span { display: block; text-align: center; padding: 8px 4px; border: 1px solid var(--border-strong); border-radius: 9px; font-size: 12.5px; font-weight: 600; color: var(--muted); transition: all .15s; }
     .seg input:checked + span { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-    .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
     .cal-actions { display: grid; gap: 10px; margin-top: 18px; }
-    .linklike { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
-    .item-sub .bell { display: inline-flex; align-items: center; gap: 4px; }
-    .item-sub .bell svg { width: 13px; height: 13px; }
+    .copy-row { display: flex; gap: 8px; }
+    .linklike { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; border-radius: 3px; }
 
     /* ---------- Toasts ---------- */
-    .toasts { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 100; display: grid; gap: 8px; width: min(420px, calc(100vw - 32px)); pointer-events: none; }
-    .toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--text); color: var(--bg); box-shadow: var(--shadow-lg); font-size: 14px; animation: pop .2s cubic-bezier(.2,.8,.2,1); }
+    .toasts { position: fixed; bottom: calc(18px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 100; display: grid; gap: 8px; width: min(420px, calc(100vw - 32px)); pointer-events: none; }
+    .toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--text); color: var(--bg); box-shadow: var(--shadow-lg); font-size: 14px; animation: pop .2s var(--ease); cursor: pointer; transition: opacity .2s, transform .2s; }
+    .toast.out { opacity: 0; transform: translateY(6px); }
     .toast.error { background: var(--danger); color: #fff; }
     .toast svg { width: 18px; height: 18px; }
 
-    footer { border-top: 1px solid var(--border); margin-top: 40px; padding: 22px 0 40px; font-size: 13px; color: var(--faint); }
+    footer { border-top: 1px solid var(--border); margin-top: 48px; padding: 22px 0 40px; font-size: 13px; color: var(--faint); }
     footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
     footer details summary { cursor: pointer; }
     footer details .input { margin-top: 8px; width: min(420px, 80vw); font-size: 13px; }
+    .kbd-hint { margin-top: 6px; }
     .visually-hidden { position: absolute !important; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; white-space: nowrap; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+      .mock-doc::after { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -389,6 +473,8 @@
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4M6 12h10"/></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 14V11a6 6 0 0 0-12 0v3l-2 3h16z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.2v.1"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
   </svg>
 
   <header class="topbar" id="topbar">
@@ -397,12 +483,15 @@
         <span class="brand-mark"><svg class="i"><use href="#i-clock"/></svg></span>
         Lapse
       </a>
-      <div class="account" id="accountBar" hidden>
-        <span class="avatar" id="avatar" aria-hidden="true"></span>
-        <span class="account-email" id="accountEmail"></span>
-        <button class="btn subtle sm" id="signOutBtn" type="button" title="Sign out">
-          <svg class="i"><use href="#i-logout"/></svg><span>Sign out</span>
-        </button>
+      <div class="top-right">
+        <div class="account" id="accountBar" hidden>
+          <span class="avatar" id="avatar" aria-hidden="true"></span>
+          <span class="account-email" id="accountEmail"></span>
+          <button class="btn subtle sm" id="signOutBtn" type="button" title="Sign out" aria-label="Sign out">
+            <svg class="i"><use href="#i-logout"/></svg><span>Sign out</span>
+          </button>
+        </div>
+        <button class="chip-btn" id="themeBtn" type="button" aria-label="Switch to dark theme" title="Switch theme"><svg class="i"><use href="#i-moon"/></svg></button>
       </div>
     </div>
   </header>
@@ -412,9 +501,9 @@
     <section id="landing" class="wrap" hidden>
       <div class="hero">
         <div>
-          <span class="eyebrow"><svg class="i" style="width:15px;height:15px"><use href="#i-sparkle"/></svg> Reads the date for you</span>
+          <span class="eyebrow"><svg class="i"><use href="#i-sparkle"/></svg> Reads the date for you</span>
           <h1>Never let a renewal <em>lapse</em> again.</h1>
-          <p class="lede">Snap a photo of a warranty, insurance policy, passport or subscription. Lapse finds the expiry date and emails you before it runs out — then waits quietly until it matters.</p>
+          <p class="lede">Snap a photo of a warranty, insurance policy, passport or subscription. Lapse finds the expiry date and reminds you before it runs out — then waits quietly until it matters.</p>
           <ul class="ticks">
             <li><span class="tick"><svg class="i"><use href="#i-check"/></svg></span><div><strong>One photo, no typing</strong><span>AI reads the name, provider and expiry date.</span></div></li>
             <li><span class="tick"><svg class="i"><use href="#i-check"/></svg></span><div><strong>Reminders you can answer</strong><span>Renewed, snooze a week, or stop — one tap from the email.</span></div></li>
@@ -450,22 +539,29 @@
 
       <div class="steps">
         <div class="card step">
-          <div class="step-num">Step 1</div>
+          <div class="label">Step 1</div>
           <h3>Snap or drop it</h3>
           <p>A photo or PDF of the policy, receipt or document — straight from your phone camera.</p>
+          <div class="mock" aria-hidden="true"><div class="mock-box mock-doc"><i></i><i></i><i></i><b>Valid until 14 Mar 2027</b></div></div>
         </div>
         <div class="card step">
-          <div class="step-num">Step 2</div>
+          <div class="label">Step 2</div>
           <h3>We read the date</h3>
           <p>Lapse pulls out what it is and when it expires. If it can't, you add the date in a tap.</p>
+          <div class="mock" aria-hidden="true"><div class="mock-box mock-fields">
+            <div><span>Name</span><strong>Car insurance</strong></div>
+            <div><span>Provider</span><strong>Allstate</strong></div>
+            <div><span>Expires</span><strong><svg class="i"><use href="#i-check"/></svg>14 Mar 2027</strong></div>
+          </div></div>
         </div>
         <div class="card step">
-          <div class="step-num">Step 3</div>
+          <div class="label">Step 3</div>
           <h3>Reply from your inbox</h3>
-          <div class="mock-mail">
-            <strong>Car Insurance expires in 30 days</strong>
+          <p>Each reminder has buttons, so answering takes one tap.</p>
+          <div class="mock" aria-hidden="true"><div class="mock-box mock-mail">
+            <strong>Car insurance expires in 30 days</strong>
             <div class="mm-btns"><span class="p">I renewed it</span><span>Remind me in 7 days</span><span>Stop</span></div>
-          </div>
+          </div></div>
         </div>
       </div>
     </section>
@@ -483,43 +579,8 @@
         </div>
       </div>
 
-      <div class="stats" id="stats">
-        <button class="card stat" data-filter="all" type="button"><div class="k"><span class="dot" style="background:var(--accent)"></span>Tracked</div><div class="v tabular" id="statAll">–</div></button>
-        <button class="card stat" data-filter="soon" type="button"><div class="k"><span class="dot" style="background:var(--warn)"></span>Due in 30 days</div><div class="v tabular" id="statSoon">–</div></button>
-        <button class="card stat" data-filter="attention" type="button"><div class="k"><span class="dot" style="background:var(--danger)"></span>Needs attention</div><div class="v tabular" id="statAttention">–</div></button>
-        <button class="card stat" data-filter="done" type="button"><div class="k"><span class="dot" style="background:var(--ok)"></span>Renewed</div><div class="v tabular" id="statDone">–</div></button>
-      </div>
-
-      <section class="channels" aria-labelledby="channelsTitle">
-        <h2 id="channelsTitle" class="visually-hidden">How Lapse reaches you</h2>
-        <div class="card channel">
-          <div class="ch-ico tone-accent"><svg class="i"><use href="#i-mail"/></svg></div>
-          <div class="ch-main">
-            <div class="ch-title">Email</div>
-            <div class="ch-sub" id="chEmail">Reminders with one-tap Renewed / Snooze.</div>
-          </div>
-          <span class="pill tone-ok">On</span>
-        </div>
-        <div class="card channel">
-          <div class="ch-ico tone-accent"><svg class="i"><use href="#i-bell"/></svg></div>
-          <div class="ch-main">
-            <div class="ch-title">This device <span class="pill tone-ok" id="chPushPill" hidden>On</span></div>
-            <div class="ch-sub" id="chPushText">Pop-up alerts, even when Lapse is closed.</div>
-          </div>
-          <div class="ch-act" id="chPushAct"></div>
-        </div>
-        <div class="card channel">
-          <div class="ch-ico tone-accent"><svg class="i"><use href="#i-cal"/></svg></div>
-          <div class="ch-main">
-            <div class="ch-title">Calendar <span class="pill tone-ok" id="chCalPill" hidden>On</span></div>
-            <div class="ch-sub" id="chCalText">Every expiry date in Google, Apple or Outlook.</div>
-          </div>
-          <button class="btn ghost sm" type="button" id="calendarBtn">Set up</button>
-        </div>
-      </section>
-
       <div class="grid-2">
-        <div class="card spotlight" id="spotlight">
+        <div class="spotlight inverse" id="spotlight">
           <div class="label">Next up</div>
           <div id="spotContent" class="spot-empty">Nothing scheduled yet.</div>
         </div>
@@ -528,7 +589,7 @@
           <div id="dzIdle">
             <div class="dz-icon" style="margin:0 auto 10px"><svg class="i"><use href="#i-camera"/></svg></div>
             <strong>Snap or drop a document</strong>
-            <div class="muted" style="margin-top:4px">Any photo, or a one-page PDF · big photos are shrunk automatically</div>
+            <div class="muted" style="margin-top:4px">Any photo, or a one-page PDF. You can also paste a screenshot.</div>
           </div>
           <div id="dzBusy" class="progress-steps" hidden>
             <div class="pstep" data-step="upload"><span class="pdot"></span><div style="flex:1"><span>Uploading <span id="uploadPct" class="tabular"></span></span><div class="bar-track"><div class="bar-fill" id="uploadBar"></div></div></div></div>
@@ -539,29 +600,79 @@
         <input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,image/*,application/pdf" class="visually-hidden" tabindex="-1">
       </div>
 
-      <div class="list-head">
+      <div class="stats" id="stats">
+        <button class="card stat" data-filter="all" type="button"><div class="k"><span class="dot" style="background:var(--accent)"></span>Tracked</div><div class="v tabular" id="statAll">–</div></button>
+        <button class="card stat" data-filter="soon" type="button"><div class="k"><span class="dot" style="background:var(--warn)"></span>Due in 30 days</div><div class="v tabular" id="statSoon">–</div></button>
+        <button class="card stat" data-filter="attention" type="button"><div class="k"><span class="dot" style="background:var(--danger)"></span>Needs attention</div><div class="v tabular" id="statAttention">–</div></button>
+        <button class="card stat" data-filter="done" type="button"><div class="k"><span class="dot" style="background:var(--ok)"></span>Renewed</div><div class="v tabular" id="statDone">–</div></button>
+      </div>
+
+      <section class="card timeline" id="timeline" aria-labelledby="tlTitle" hidden>
+        <div class="tl-head">
+          <div class="label" id="tlTitle">The year ahead</div>
+          <span class="muted" id="tlNote"></span>
+        </div>
+        <div class="tl-track" id="tlTrack"></div>
+      </section>
+
+      <div class="list-head" id="listHead">
         <h2>Everything you're tracking</h2>
         <div class="toolbar">
+          <span id="monthChip"></span>
           <div class="tabs" role="tablist" id="tabs">
             <button class="tab" role="tab" data-filter="all" aria-selected="true">All <span class="n" id="nAll">0</span></button>
             <button class="tab" role="tab" data-filter="soon" aria-selected="false">Soon <span class="n" id="nSoon">0</span></button>
             <button class="tab" role="tab" data-filter="attention" aria-selected="false">Attention <span class="n" id="nAttention">0</span></button>
             <button class="tab" role="tab" data-filter="done" aria-selected="false">Done <span class="n" id="nDone">0</span></button>
           </div>
-          <label class="search"><span class="visually-hidden">Search items</span><svg class="i"><use href="#i-search"/></svg><input class="input" id="searchInput" type="search" placeholder="Search"></label>
-          <button class="btn subtle sm" id="refreshBtn" type="button" title="Refresh"><svg class="i"><use href="#i-refresh"/></svg><span class="visually-hidden">Refresh</span></button>
+          <label class="search"><span class="visually-hidden">Search items</span><svg class="i"><use href="#i-search"/></svg><input class="input" id="searchInput" type="search" placeholder="Search"><kbd aria-hidden="true">/</kbd></label>
+          <button class="btn subtle sm" id="refreshBtn" type="button" title="Refresh" aria-label="Refresh"><svg class="i"><use href="#i-refresh"/></svg></button>
         </div>
       </div>
 
-      <div id="itemsList">
+      <div id="itemsList" aria-live="polite">
         <div class="items"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
       </div>
+
+      <section aria-labelledby="channelsTitle">
+        <h2 id="channelsTitle" class="section-title">How Lapse reaches you</h2>
+        <p class="section-sub">Email is always on. Add this device or your calendar as a backup.</p>
+        <div class="channels">
+          <div class="card channel">
+            <div class="ch-ico tone-accent"><svg class="i"><use href="#i-mail"/></svg></div>
+            <div class="ch-main">
+              <div class="ch-title">Email</div>
+              <div class="ch-sub" id="chEmail">Reminders with one-tap Renewed / Snooze.</div>
+            </div>
+            <span class="pill tone-ok">On</span>
+          </div>
+          <div class="card channel">
+            <div class="ch-ico tone-accent"><svg class="i"><use href="#i-bell"/></svg></div>
+            <div class="ch-main">
+              <div class="ch-title">This device <span class="pill tone-ok" id="chPushPill" hidden>On</span></div>
+              <div class="ch-sub" id="chPushText">Pop-up alerts, even when Lapse is closed.</div>
+            </div>
+            <div class="ch-act" id="chPushAct"></div>
+          </div>
+          <div class="card channel">
+            <div class="ch-ico tone-accent"><svg class="i"><use href="#i-cal"/></svg></div>
+            <div class="ch-main">
+              <div class="ch-title">Calendar <span class="pill tone-ok" id="chCalPill" hidden>On</span></div>
+              <div class="ch-sub" id="chCalText">Every expiry date in Google, Apple or Outlook.</div>
+            </div>
+            <button class="btn ghost sm" type="button" id="calendarBtn">Set up</button>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
 
   <footer>
     <div class="wrap">
-      <span>Lapse · reminders before things run out. Documents are deleted after reading.</span>
+      <div>
+        <div>Lapse · reminders before things run out. Documents are deleted after reading.</div>
+        <div class="kbd-hint" id="kbdHint" hidden>Shortcuts: <kbd>/</kbd> search · <kbd>N</kbd> add an item · <kbd>U</kbd> upload</div>
+      </div>
       <details>
         <summary>Connection settings</summary>
         <label class="lbl" for="apiUrlInput" style="margin-top:8px">API URL</label>
@@ -640,7 +751,7 @@
           <a class="btn ghost" id="calWebcal"><svg class="i"><use href="#i-cal"/></svg>Apple Calendar or Outlook</a>
         </div>
         <label class="lbl" for="calUrl" style="margin-top:18px">Or copy your private link</label>
-        <div style="display:flex;gap:8px">
+        <div class="copy-row">
           <input class="input" id="calUrl" readonly style="font-size:13px">
           <button class="btn ghost" type="button" id="calCopy">Copy</button>
         </div>
@@ -659,7 +770,7 @@
     </div>
   </dialog>
 
-  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
   <script>
     const DEFAULT_API_URL = "__LAPSE_API_URL__";
@@ -675,6 +786,9 @@
     const typeInfo = (v) => TYPES.find((t) => t.v === v) || TYPES[TYPES.length - 1];
     const $ = (id) => document.getElementById(id);
     const icon = (id, cls = "i") => `<svg class="${cls}"><use href="#${id}"/></svg>`;
+    // Safe in both element text and quoted attributes.
+    const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+    const esc = (str) => String(str ?? "").replace(/[&<>"']/g, (c) => ESC[c]);
 
     // ---------- storage (never let blocked storage break the page) ----------
     const store = {
@@ -682,6 +796,26 @@
       set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
       del: (k) => { try { localStorage.removeItem(k); } catch {} },
     };
+
+    // ---------- theme ----------
+    const sysDark = matchMedia("(prefers-color-scheme: dark)");
+    const systemTheme = () => (sysDark.matches ? "dark" : "light");
+    const currentTheme = () => document.documentElement.dataset.theme || systemTheme();
+    function syncThemeUi() {
+      const dark = currentTheme() === "dark";
+      $("themeBtn").innerHTML = icon(dark ? "i-sun" : "i-moon");
+      $("themeBtn").setAttribute("aria-label", `Switch to ${dark ? "light" : "dark"} theme`);
+      $("themeColor").content = dark ? "#0f1413" : "#0f766e";
+    }
+    $("themeBtn").addEventListener("click", () => {
+      const next = currentTheme() === "dark" ? "light" : "dark";
+      // Choosing what the system already uses goes back to following the system.
+      if (next === systemTheme()) { delete document.documentElement.dataset.theme; store.del("lapse_theme"); }
+      else { document.documentElement.dataset.theme = next; store.set("lapse_theme", next); }
+      syncThemeUi();
+    });
+    sysDark.addEventListener?.("change", syncThemeUi);
+    syncThemeUi();
 
     // ---------- URL params ----------
     const urlParams = new URLSearchParams(location.search);
@@ -702,11 +836,17 @@
     // ---------- toasts ----------
     function toast(text, kind = "ok") {
       const el = document.createElement("div");
-      el.className = `toast ${kind === "error" ? "error" : ""}`;
-      el.innerHTML = `${icon(kind === "error" ? "i-alert" : "i-check")}<span></span>`;
+      const error = kind === "error";
+      el.className = `toast ${error ? "error" : ""}`;
+      if (error) el.setAttribute("role", "alert");
+      el.innerHTML = `${icon(error ? "i-alert" : "i-check")}<span></span>`;
       el.querySelector("span").textContent = text;
-      $("toasts").appendChild(el);
-      setTimeout(() => el.remove(), 4200);
+      const close = () => { el.classList.add("out"); setTimeout(() => el.remove(), 220); };
+      el.addEventListener("click", close);
+      const box = $("toasts");
+      while (box.children.length >= 3) box.firstChild.remove();
+      box.appendChild(el);
+      setTimeout(close, error ? 6500 : 4200);
     }
 
     // ---------- session ----------
@@ -715,23 +855,32 @@
       return token ? { token, email: store.get("lapse_email") || "" } : null;
     }
 
+    function greeting() {
+      const h = new Date().getHours();
+      return h < 5 ? "Still up?" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+    }
+
     function renderAuth() {
       const s = session();
       $("landing").hidden = !!s;
       $("dashboard").hidden = !s;
       $("accountBar").hidden = !s;
+      $("kbdHint").hidden = !s;
       if (s) {
         $("accountEmail").textContent = s.email;
         $("avatar").textContent = (s.email[0] || "?").toUpperCase();
+        $("greeting").textContent = greeting();
         $("chEmail").textContent = `To ${s.email}. If the first one lands in Spam, mark it "Not spam".`;
       } else {
-        currentItems = [];
+        resetItems();
         $("emailInput").value = store.get("lapse_email") || "";
       }
     }
 
     function signOutLocal(message) {
       store.del("lapse_session");
+      store.del(CACHE_KEY);
+      document.querySelectorAll("dialog[open]").forEach((d) => d.close());
       renderAuth();
       showSignInForm();
       if (message) notice(message, "error");
@@ -752,13 +901,20 @@
       if (!api) throw new Error(NEED_API);
       const s = session();
       if (!s) throw new Error("Sign in first.");
-      const res = await fetch(`${api}${path}`, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${s.token}` } });
+      let res;
+      try {
+        res = await fetch(`${api}${path}`, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${s.token}` } });
+      } catch {
+        throw new Error(navigator.onLine === false ? "You're offline. Reconnect and try again." : "Couldn't reach Lapse. Check your connection.");
+      }
       if (res.status === 401) {
         signOutLocal("Your session expired. Sign in again.");
         throw new Error("Session expired");
       }
       return res;
     }
+    const sendJson = (path, body, method = "POST") =>
+      apiFetch(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
     async function postJson(path, body) {
       const res = await fetch(`${getApiUrl()}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -791,7 +947,7 @@
         $("signinFormWrap").hidden = true;
         $("sentState").hidden = false;
       } catch (err) {
-        notice(err.message || "Network error. Check your connection.", "error");
+        notice(err instanceof TypeError ? "Network error. Check your connection." : err.message, "error");
       } finally {
         btn.disabled = false;
         btn.innerHTML = label;
@@ -825,15 +981,15 @@
     // ---------- dates ----------
     const MS_DAY = 86400000;
     function parseDate(s) { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); }
+    const isoOf = (utcMs) => new Date(utcMs).toISOString().slice(0, 10);
     function todayUtc() { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()); }
     // Local calendar date, so "today" matches what the person sees on their clock.
-    function todayIso() { const n = new Date(); return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())).toISOString().slice(0, 10); }
+    const todayIso = () => isoOf(todayUtc());
     function daysLeft(expiry) { return expiry ? Math.round((parseDate(expiry) - todayUtc()) / MS_DAY) : null; }
     const fmtDate = (s) => new Date(parseDate(s)).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     function isoPlusMonths(months) {
       const n = new Date();
-      const d = new Date(Date.UTC(n.getFullYear(), n.getMonth() + months, n.getDate()));
-      return d.toISOString().slice(0, 10);
+      return isoOf(Date.UTC(n.getFullYear(), n.getMonth() + months, n.getDate()));
     }
     function humanDays(d) {
       if (d === 0) return "today";
@@ -879,93 +1035,140 @@
       attention: (c) => c.group === "attention",
       done: (c) => c.group === "done",
     };
+    const isUpcoming = (x) => x.item.status === "ACTIVE" && x.c.d !== undefined && x.c.d >= 0;
 
     // ---------- items ----------
+    const CACHE_KEY = "lapse_items_cache";
+    const SKELETON = `<div class="items"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>`;
     let currentItems = [];
     let filter = "all";
     let query = "";
-    let pollTimer = null;
+    let monthFilter = "";   // "YYYY-MM" picked on the year-ahead strip
     let loadedOnce = false;
+    let lastListHtml = null;
+    const itemById = (id) => currentItems.find((i) => i.itemId === id);
+
+    function setList(html) {
+      // Polling re-renders every few seconds; leaving identical markup alone keeps
+      // half-typed dates, open menus and focus where they are.
+      if (html === lastListHtml) return;
+      $("itemsList").innerHTML = html;
+      lastListHtml = html;
+    }
+
+    function resetItems() {
+      currentItems = [];
+      loadedOnce = false;
+      filter = "all"; query = ""; monthFilter = "";
+      $("searchInput").value = "";
+      stopPolling();
+      setList(SKELETON);
+    }
+
+    // The last list seen on this device, shown instantly while the fresh one loads.
+    function readCache(email) {
+      try {
+        const c = JSON.parse(store.get(CACHE_KEY) || "null");
+        return c && c.email === email && Array.isArray(c.items) ? c.items : null;
+      } catch { return null; }
+    }
 
     async function loadItems() {
-      if (!session()) { renderAuth(); return; }
+      const s = session();
+      if (!s) { renderAuth(); return; }
       try {
         const res = await apiFetch("/items");
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Couldn't load your items");
+        if (!session()) return;
         currentItems = data.items || [];
         loadedOnce = true;
+        store.set(CACHE_KEY, JSON.stringify({ email: s.email, items: currentItems }));
         render();
         watchUpload();
         managePolling();
       } catch (err) {
         if (!session()) return;
-        if (!loadedOnce) $("itemsList").innerHTML = `<div class="card empty"><h3>Couldn't load your items</h3><p></p><button class="btn ghost" onclick="loadItems()">Try again</button></div>`;
-        if (!loadedOnce) $("itemsList").querySelector("p").textContent = err.message;
-        else toast(err.message, "error");
+        if (loadedOnce || currentItems.length) { toast(err.message, "error"); return; }
+        setList(`<div class="card empty"><h3>Couldn't load your items</h3><p>${esc(err.message)}</p><button class="btn ghost" type="button" data-act="retry">Try again</button></div>`);
+        $("summaryLine").textContent = "Something went wrong loading your list.";
       }
     }
 
     function render() {
-      const classified = currentItems.map((item, idx) => ({ item, idx, c: classify(item) }));
+      const classified = currentItems.map((item) => ({ item, c: classify(item) }));
       const count = (f) => classified.filter((x) => FILTERS[f](x.c)).length;
       const n = { all: classified.length, soon: count("soon"), attention: count("attention"), done: count("done") };
       $("statAll").textContent = n.all; $("statSoon").textContent = n.soon; $("statAttention").textContent = n.attention; $("statDone").textContent = n.done;
       $("nAll").textContent = n.all; $("nSoon").textContent = n.soon; $("nAttention").textContent = n.attention; $("nDone").textContent = n.done;
-      document.querySelectorAll(".stat").forEach((b) => b.classList.toggle("active", b.dataset.filter === filter && filter !== "all"));
+      document.querySelectorAll(".stat").forEach((b) => {
+        const on = b.dataset.filter === filter && filter !== "all";
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", String(on));
+      });
       document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.filter === filter)));
 
       // summary line
       const parts = [];
       if (n.attention) parts.push(`${n.attention} need${n.attention === 1 ? "s" : ""} attention`);
       if (n.soon) parts.push(`${n.soon} due within 30 days`);
-      $("summaryLine").textContent = n.all === 0 ? "Add your first document to get reminders." : parts.length ? parts.join(" · ") : "You're all caught up. We'll email you before anything lapses.";
+      $("summaryLine").textContent = n.all === 0 ? "Add your first document to get reminders." : parts.length ? parts.join(" · ") : "You're all caught up. We'll remind you before anything lapses.";
 
       renderSpotlight(classified);
+      renderTimeline(classified);
+      $("monthChip").innerHTML = monthFilter
+        ? `<button class="filter-chip" type="button" data-act="clear-month" aria-label="Clear month filter">${esc(monthLabel(monthFilter, "long"))}${icon("i-x")}</button>` : "";
 
       if (n.all === 0) {
-        $("itemsList").innerHTML = `
+        setList(`
           <div class="card empty">
             <div class="dz-icon">${icon("i-sparkle")}</div>
             <h3>Nothing tracked yet</h3>
             <p>Snap a photo of an insurance policy, warranty card, passport or subscription receipt — or add one by hand.</p>
-            <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-              <button class="btn" type="button" onclick="pickFile()">${icon("i-camera")}Snap a document</button>
-              <button class="btn ghost" type="button" onclick="openItemDialog()">${icon("i-plus")}Add manually</button>
+            <div class="empty-actions">
+              <button class="btn" type="button" data-act="pick">${icon("i-camera")}Snap a document</button>
+              <button class="btn ghost" type="button" data-act="add">${icon("i-plus")}Add manually</button>
             </div>
-          </div>`;
+          </div>`);
         return;
       }
 
       const q = query.trim().toLowerCase();
-      const visible = classified.filter((x) => FILTERS[filter](x.c) && (!q || [x.item.name, x.item.provider, x.item.type].join(" ").toLowerCase().includes(q)));
+      const visible = classified.filter((x) =>
+        FILTERS[filter](x.c)
+        && (!monthFilter || (isUpcoming(x) && x.item.expiryDate.startsWith(monthFilter)))
+        && (!q || [x.item.name, x.item.provider, x.item.type, typeInfo(x.item.type).label].join(" ").toLowerCase().includes(q)));
       if (visible.length === 0) {
-        $("itemsList").innerHTML = `<div class="card empty"><h3>No matches</h3><p>Nothing here for this filter${q ? " and search" : ""}.</p><button class="btn ghost" type="button" onclick="setFilter('all'); clearSearch()">Show everything</button></div>`;
+        setList(`<div class="card empty"><h3>No matches</h3><p>Nothing here for this filter${q ? " and search" : ""}.</p><button class="btn ghost" type="button" data-act="show-all">Show everything</button></div>`);
         return;
       }
-      $("itemsList").innerHTML = GROUPS.map((g) => {
+      setList(GROUPS.map((g) => {
         const rows = visible.filter((x) => x.c.group === g.key);
         if (!rows.length) return "";
-        return `<div class="group"><div class="group-title">${g.title} <span class="count">${rows.length}</span></div><div class="items">${rows.map(itemRow).join("")}</div></div>`;
-      }).join("");
+        return `<div class="group"><div class="group-title label">${g.title} <span class="count">${rows.length}</span></div><div class="items">${rows.map(itemRow).join("")}</div></div>`;
+      }).join(""));
     }
 
     const DEFAULT_LEAD = 30;
     const leadOf = (item) => Number(item.leadDays) || DEFAULT_LEAD;
     const LEAD_WORDS = { 1: "1 day", 7: "1 week", 14: "2 weeks", 30: "1 month", 60: "2 months", 90: "3 months" };
+    const leadWords = (lead) => LEAD_WORDS[lead] || `${lead} days`;
     // "Reminder 28 Oct" for active items whose first reminder is still ahead.
     function reminderLabel(item, c) {
       if (item.status !== "ACTIVE" || c.d === undefined || c.d < 0) return "";
       const lead = leadOf(item);
       if (c.d <= lead) return `<span class="bell">${icon("i-bell")}Reminding you now</span>`;
       const when = new Date(parseDate(item.expiryDate) - lead * MS_DAY);
-      return `<span class="bell" title="${LEAD_WORDS[lead] || lead + " days"} before">${icon("i-bell")}Reminder ${when.toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC", ...(when.getUTCFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) })}</span>`;
+      return `<span class="bell" title="${leadWords(lead)} before">${icon("i-bell")}Reminder ${when.toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC", ...(when.getUTCFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) })}</span>`;
     }
 
-    function itemRow({ item, idx, c }) {
+    function itemRow({ item, c }) {
       const t = typeInfo(item.type);
+      const id = esc(item.itemId);
+      const name = esc(item.name);
+      const live = item.status === "ACTIVE" || item.status === "NEEDS_DATE";
       const sub = [
-        item.provider ? esc(item.provider) : "",
+        esc(item.provider),
         t.label === "ID" ? "Passport / ID" : t.label,
         item.expiryDate ? `${c.d < 0 ? "Expired" : "Expires"} ${fmtDate(item.expiryDate)}` : "",
         reminderLabel(item, c),
@@ -979,40 +1182,36 @@
         else right = `<div class="countdown"><b class="tabular">${bc.n}</b><small>${bc.u} left</small></div>`;
       }
 
-      const dateForm = (prompt, button) => `
-        <form class="item-extra" onsubmit="submitManualDate(event, ${idx})">
+      const dateForm = (prompt, button, value = "") => `
+        <form class="item-extra" data-date-form data-id="${id}">
           <span class="muted" style="font-size:13px">${prompt}</span>
-          <input class="input" type="date" required min="${todayIso()}" aria-label="New expiry date for ${esc(item.name)}">
+          <input class="input" type="date" required min="${todayIso()}" value="${esc(value)}" aria-label="Expiry date for ${name}">
           <button class="btn sm" type="submit">${button}</button>
         </form>`;
-      let needsDate = "";
+      let extra = "";
       if (item.status === "NEEDS_DATE" && item.suggestedDate) {
-        needsDate = `
-        <form class="item-extra" onsubmit="submitManualDate(event, ${idx})">
-          <span class="muted" style="font-size:13px">We think it expires on <strong>${fmtDate(item.suggestedDate)}</strong>. Is that right?</span>
-          <input class="input" type="date" required min="${todayIso()}" value="${esc(item.suggestedDate)}" aria-label="Expiry date for ${esc(item.name)}">
-          <button class="btn sm" type="submit">${icon("i-check")}Confirm</button>
-        </form>`;
+        extra = dateForm(`We think it expires on <strong>${fmtDate(item.suggestedDate)}</strong>. Is that right?`, `${icon("i-check")}Confirm`, item.suggestedDate);
       } else if (item.status === "NEEDS_DATE") {
-        needsDate = item.expiredOn
+        extra = item.expiredOn
           ? dateForm(`This document expired on ${fmtDate(item.expiredOn)}. Renewed it? Enter the new expiry date.`, "Save date")
           : dateForm("We couldn't read the date. When does it expire?", "Save date");
       } else if (item.status === "ACTIVE" && c.d !== undefined && c.d < 0) {
-        needsDate = dateForm("Renewed it? Enter the new expiry date to keep getting reminders.", "Update");
+        extra = dateForm("Renewed it? Enter the new expiry date to keep getting reminders.", "Update");
       }
 
       const canEdit = item.status !== "PROCESSING";
       const cal = item.expiryDate ? `
-          <a href="${googleCalendarUrl(item)}" target="_blank" rel="noopener">${icon("i-cal")}Add to Google Calendar</a>
-          <button type="button" onclick="downloadIcs(currentItems[${idx}])">${icon("i-download")}Download .ics</button>` : "";
+          <a href="${esc(googleCalendarUrl(item))}" target="_blank" rel="noopener">${icon("i-cal")}Add to Google Calendar</a>
+          <button type="button" data-act="ics" data-id="${id}">${icon("i-download")}Download .ics</button>` : "";
       const menu = `
         <details class="menu">
-          <summary class="chip-btn" aria-label="More actions for ${esc(item.name)}">${icon("i-dots")}</summary>
+          <summary class="chip-btn" aria-label="More actions for ${name}">${icon("i-dots")}</summary>
           <div class="menu-list">
-            ${canEdit ? `<button type="button" onclick="openItemDialog(${idx})">${icon("i-edit")}${item.status === "ACTIVE" || item.status === "NEEDS_DATE" ? "Edit" : "Track again"}</button>` : ""}
+            ${item.status === "ACTIVE" && c.d >= 0 ? `<button type="button" data-act="renew" data-id="${id}">${icon("i-check")}I renewed it</button>` : ""}
+            ${canEdit ? `<button type="button" data-act="edit" data-id="${id}">${icon(live ? "i-edit" : "i-refresh")}${live ? "Edit" : "Track again"}</button>` : ""}
             ${cal}
             ${cal || canEdit ? "<hr>" : ""}
-            <button type="button" class="danger-item" onclick="confirmStop(${idx})">${icon("i-bell-off")}${item.status === "ACTIVE" || item.status === "PROCESSING" ? "Stop reminders" : "Remove"}</button>
+            <button type="button" class="danger-item" data-act="stop" data-id="${id}">${icon("i-bell-off")}${item.status === "ACTIVE" || item.status === "PROCESSING" ? "Stop reminders" : "Remove"}</button>
           </div>
         </details>`;
 
@@ -1020,80 +1219,170 @@
         <div class="card item tone-${c.tone}">
           <div class="type-ico">${icon(t.icon)}</div>
           <div class="item-main">
-            <div class="item-name">${esc(item.name)}</div>
+            <div class="item-name" title="${name}">${name}</div>
             <div class="item-sub">${sub || "&nbsp;"}</div>
           </div>
           <div class="item-right">${right}${menu}</div>
-          ${needsDate}
+          ${extra}
         </div>`;
     }
 
+    let lastSpotHtml = null;
     function renderSpotlight(classified) {
-      const next = classified
-        .filter((x) => x.item.status === "ACTIVE" && x.c.d !== undefined && x.c.d >= 0)
-        .sort((a, b) => a.c.d - b.c.d)[0];
+      const next = classified.filter(isUpcoming).sort((a, b) => a.c.d - b.c.d)[0];
       const box = $("spotContent");
+      let html, frac = 0;
+      const R = 46, C = 2 * Math.PI * R;
       if (!next) {
-        box.className = "spot-empty";
-        box.innerHTML = classified.length
+        html = classified.length
           ? "Nothing upcoming. Everything is renewed or needs a date."
           : "Your next renewal will show up here, with a countdown.";
-        return;
+      } else {
+        const { item, c } = next;
+        frac = Math.max(0.04, Math.min(1, 1 - c.d / 90));
+        const bc = bigCount(c.d);
+        const lead = leadOf(item);
+        html = `
+          <div class="spot-body">
+            <div class="ring" aria-hidden="true">
+              <svg viewBox="0 0 108 108"><circle class="track" cx="54" cy="54" r="${R}" fill="none" stroke-width="9"/>
+                <circle class="bar" cx="54" cy="54" r="${R}" fill="none" style="stroke:var(--${c.tone})" stroke-width="9" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
+              <div class="center"><div><b class="tabular">${c.d === 0 ? "0" : bc.n}</b><small>${c.d === 0 ? "today" : bc.u}</small></div></div>
+            </div>
+            <div class="spot-info">
+              <h2>${esc(item.name)}</h2>
+              <p>Expires ${fmtDate(item.expiryDate)} · ${humanDays(c.d)}</p>
+              <p>${c.d <= lead ? "We'll keep nudging you until you renew or stop it." : `First reminder ${leadWords(lead)} before. Nothing to do yet.`}</p>
+              <div class="spot-actions">
+                <button class="btn sm" type="button" data-act="renew" data-id="${esc(item.itemId)}">${icon("i-check")}I renewed it</button>
+                <button class="btn ghost sm" type="button" data-act="edit" data-id="${esc(item.itemId)}">Edit</button>
+              </div>
+            </div>
+          </div>`;
       }
-      const { item, c } = next;
-      const horizon = 90;
-      const frac = Math.max(0.04, Math.min(1, 1 - c.d / horizon));
-      const R = 46, C = 2 * Math.PI * R;
-      const color = `var(--${c.tone === "accent" ? "accent" : c.tone})`;
-      const bc = bigCount(c.d);
-      box.className = "";
-      box.innerHTML = `
-        <div class="spot-body">
-          <div class="ring" aria-hidden="true">
-            <svg viewBox="0 0 108 108"><circle class="track" cx="54" cy="54" r="${R}" fill="none" stroke-width="9"/>
-              <circle class="bar" cx="54" cy="54" r="${R}" fill="none" style="stroke:${color}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
-            <div class="center"><div><b class="tabular">${c.d === 0 ? "0" : bc.n}</b><small>${c.d === 0 ? "today" : bc.u}</small></div></div>
-          </div>
-          <div class="spot-info">
-            <h2></h2>
-            <p>Expires ${fmtDate(item.expiryDate)} · ${humanDays(c.d)}</p>
-            <p style="margin-top:8px">${c.d <= 30 ? "We'll keep nudging you by email until you renew or stop it." : "We'll email you ahead of time. Nothing for you to do yet."}</p>
-          </div>
-        </div>`;
-      box.querySelector("h2").textContent = item.name;
+      if (html === lastSpotHtml) return;
+      lastSpotHtml = html;
+      box.className = next ? "" : "spot-empty";
+      box.innerHTML = html;
+      if (!next) return;
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const bar = box.querySelector(".bar");
         if (bar) bar.style.strokeDashoffset = String(C * (1 - frac));
       }));
     }
 
+    // ---------- year ahead ----------
+    function monthLabel(key, style = "short") {
+      return new Date(parseDate(`${key}-01`)).toLocaleDateString(undefined, { month: style, timeZone: "UTC", ...(style === "long" ? { year: "numeric" } : {}) });
+    }
+    let lastTimelineHtml = null;
+    function renderTimeline(classified) {
+      const upcoming = classified.filter(isUpcoming);
+      $("timeline").hidden = upcoming.length === 0;
+      if (!upcoming.length) { monthFilter = ""; lastTimelineHtml = null; return; }
+      const now = new Date();
+      const months = Array.from({ length: 12 }, (_, i) => ({ key: isoOf(Date.UTC(now.getFullYear(), now.getMonth() + i, 1)).slice(0, 7), rows: [] }));
+      const byKey = Object.fromEntries(months.map((m) => [m.key, m]));
+      let beyond = 0;
+      for (const x of upcoming) {
+        const m = byKey[x.item.expiryDate.slice(0, 7)];
+        if (m) m.rows.push(x); else beyond++;
+      }
+      if (monthFilter && !byKey[monthFilter]?.rows.length) monthFilter = "";
+      const inYear = upcoming.length - beyond;
+      $("tlNote").textContent = [
+        `${inYear} in the next 12 months`,
+        beyond ? `${beyond} later` : "",
+      ].filter(Boolean).join(" · ");
+      const html = months.map((m, i) => {
+        const rows = m.rows.sort((a, b) => a.c.d - b.c.d);
+        const dots = rows.slice(0, 3).map((x) => `<span class="tl-dot tone-${x.c.tone}"></span>`).join("")
+          + (rows.length > 3 ? `<span class="tl-more">+${rows.length - 3}</span>` : "");
+        const names = rows.map((x) => x.item.name).join(", ");
+        const long = monthLabel(m.key, "long");
+        const showYear = i === 0 || m.key.endsWith("-01");
+        return `<button class="tl-month ${i === 0 ? "now" : ""} ${m.key === monthFilter ? "active" : ""}" type="button" data-act="month" data-month="${m.key}"
+          ${rows.length ? "" : "disabled"} aria-pressed="${m.key === monthFilter}" aria-label="${esc(long)}: ${rows.length ? esc(names) : "nothing due"}" title="${rows.length ? esc(`${long}: ${names}`) : esc(long)}">
+          <span class="tl-dots">${dots}</span><span class="tl-label">${esc(monthLabel(m.key))}</span><span class="tl-year">${showYear ? m.key.slice(0, 4) : ""}</span></button>`;
+      }).join("");
+      if (html === lastTimelineHtml) return;
+      lastTimelineHtml = html;
+      $("tlTrack").innerHTML = html;
+    }
+
     function setFilter(f) { filter = f; render(); }
-    function clearSearch() { query = ""; $("searchInput").value = ""; render(); }
+    function showAll() { filter = "all"; monthFilter = ""; query = ""; $("searchInput").value = ""; render(); }
+    const scrollToList = () => $("listHead").scrollIntoView({ behavior: "smooth", block: "start" });
     document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => setFilter(t.dataset.filter)));
     document.querySelectorAll(".stat").forEach((b) => b.addEventListener("click", () => {
       setFilter(filter === b.dataset.filter ? "all" : b.dataset.filter);
-      document.querySelector(".list-head").scrollIntoView({ behavior: "smooth", block: "start" });
+      scrollToList();
     }));
     $("searchInput").addEventListener("input", (e) => { query = e.target.value; render(); });
-    $("refreshBtn").addEventListener("click", async () => { await loadItems(); toast("Up to date"); });
-    // close other open menus when one opens / on outside click
+    $("refreshBtn").addEventListener("click", async () => { await loadItems(); if (session()) toast("Up to date"); });
+
+    // ---------- actions (one listener; rows carry data-act + the item's id) ----------
+    // Items are addressed by id, never by list position: the list can be re-sorted
+    // by a background refresh while a menu or dialog is open.
+    const ACTIONS = {
+      pick: () => pickFile(),
+      add: () => openItemDialog(),
+      edit: (el) => openItemDialog(el.dataset.id),
+      renew: (el) => openItemDialog(el.dataset.id, true),
+      stop: (el) => confirmStop(el.dataset.id),
+      ics: (el) => { const item = itemById(el.dataset.id); if (item) downloadIcs(item); },
+      retry: () => loadItems(),
+      "show-all": showAll,
+      month: (el) => { monthFilter = monthFilter === el.dataset.month ? "" : el.dataset.month; filter = "all"; render(); if (monthFilter) scrollToList(); },
+      "clear-month": () => { monthFilter = ""; render(); },
+      "push-on": (el) => enablePush(el),
+      "push-test": (el) => testPush(el),
+      "push-off": () => disablePush(),
+    };
     document.addEventListener("click", (e) => {
+      // close open row menus on outside click or after choosing an entry
       document.querySelectorAll("details.menu[open]").forEach((m) => { if (!m.contains(e.target) || e.target.closest(".menu-list")) m.open = false; });
+      const el = e.target.closest("[data-act]");
+      if (el && ACTIONS[el.dataset.act]) ACTIONS[el.dataset.act](el);
+    });
+    document.addEventListener("submit", (e) => {
+      const form = e.target.closest("form[data-date-form]");
+      if (form) submitManualDate(e, form);
     });
 
+    // ---------- keyboard ----------
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        const open = document.querySelector("details.menu[open]");
+        if (open) { open.open = false; open.querySelector("summary").focus(); }
+        else if (document.activeElement === $("searchInput") && query) { query = ""; $("searchInput").value = ""; render(); }
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey || !session() || document.querySelector("dialog[open]")) return;
+      if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
+      const k = e.key.toLowerCase();
+      if (k === "/") { e.preventDefault(); $("searchInput").focus(); }
+      else if (k === "n") { e.preventDefault(); openItemDialog(); }
+      else if (k === "u") { e.preventDefault(); pickFile(); }
+    });
+
+    // ---------- polling while a document is being read ----------
+    const POLL_MS = 3000, POLL_MAX_TICKS = 40;
+    let pollTimer = null;
+    let pollTicks = 0;
     function managePolling() {
       const reading = currentItems.some((i) => i.status === "PROCESSING");
-      if (reading && !pollTimer) {
-        let ticks = 0;
-        pollTimer = setInterval(() => { if (++ticks > 40) stopPolling(); loadItems(); }, 3000);
-      } else if (!reading) stopPolling();
+      if (!reading) { stopPolling(); pollTicks = 0; return; }
+      // After two minutes stop asking; the next visit or refresh picks it up.
+      if (pollTicks >= POLL_MAX_TICKS) { stopPolling(); return; }
+      if (!pollTimer) pollTimer = setInterval(() => { pollTicks++; if (!document.hidden) loadItems(); }, POLL_MS);
     }
     function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
 
     // ---------- calendar ----------
     function googleCalendarUrl(item) {
       const compact = item.expiryDate.replace(/-/g, "");
-      const next = new Date(parseDate(item.expiryDate) + MS_DAY).toISOString().slice(0, 10).replace(/-/g, "");
+      const next = isoOf(parseDate(item.expiryDate) + MS_DAY).replace(/-/g, "");
       const params = new URLSearchParams({
         action: "TEMPLATE", text: `Renew: ${item.name}`, dates: `${compact}/${next}`,
         details: [item.type, item.provider].filter(Boolean).join(" · ") || "Lapse expiry reminder",
@@ -1103,12 +1392,13 @@
     function downloadIcs(item) {
       const compact = item.expiryDate.replace(/-/g, "");
       const icsText = (s) => String(s).replace(/[\\;,]/g, (m) => "\\" + m).replace(/\r?\n/g, " ");
+      const lead = leadOf(item);
       const ics = [
         "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Lapse//Expiry Reminder//EN", "BEGIN:VEVENT",
         `UID:${item.itemId}@lapse`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
         `DTSTART;VALUE=DATE:${compact}`, `SUMMARY:${icsText("Renew: " + item.name)}`,
         `DESCRIPTION:${icsText([item.type, item.provider].filter(Boolean).join(" - ") || "Lapse expiry reminder")}`,
-        "BEGIN:VALARM", "TRIGGER:-P30D", "ACTION:DISPLAY", `DESCRIPTION:${icsText(item.name + " expires in 30 days")}`, "END:VALARM",
+        "BEGIN:VALARM", `TRIGGER:-P${lead}D`, "ACTION:DISPLAY", `DESCRIPTION:${icsText(`${item.name} expires in ${leadWords(lead)}`)}`, "END:VALARM",
         "END:VEVENT", "END:VCALENDAR",
       ].join("\r\n");
       const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
@@ -1119,30 +1409,33 @@
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    function esc(str) { const d = document.createElement("div"); d.textContent = str || ""; return d.innerHTML; }
-
     // ---------- add / edit dialog ----------
     const itemDialog = $("itemDialog");
-    let editingIdx = null;
+    let editingId = null;
     $("typePicker").innerHTML = TYPES.map((t, i) => `
       <label class="type-opt"><input type="radio" name="fType" value="${t.v}" ${i === 0 ? "checked" : ""}><span>${icon(t.icon)}${t.label}</span></label>`).join("");
     document.querySelectorAll("dialog [data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
     document.querySelectorAll("dialog").forEach((d) => d.addEventListener("click", (e) => { if (e.target === d) d.close(); }));
     $("quickDates").addEventListener("click", (e) => {
       const m = e.target.dataset.months;
-      if (m) $("fExpiry").value = isoPlusMonths(Number(m));
+      if (!m) return;
+      $("fExpiry").value = isoPlusMonths(Number(m));
+      updateLeadHint();
     });
 
-    function openItemDialog(idx = null) {
-      editingIdx = idx;
-      const item = idx === null ? null : currentItems[idx];
+    // renewing = the person says they've renewed it and only needs to give the new date.
+    function openItemDialog(id = null, renewing = false) {
+      const item = id ? itemById(id) : null;
+      if (id && !item) return;
+      editingId = item ? item.itemId : null;
+      const live = item && (item.status === "ACTIVE" || item.status === "NEEDS_DATE");
       $("itemForm").reset();
-      $("itemDlgTitle").textContent = item ? (item.status === "ACTIVE" || item.status === "NEEDS_DATE" ? "Edit item" : "Track again") : "Add an item";
+      $("itemDlgTitle").textContent = !item ? "Add an item" : renewing ? "Renewed? Set the new date" : live ? "Edit item" : "Track again";
       $("itemSubmit").textContent = item ? "Save changes" : "Save & schedule";
       if (item) {
         $("fName").value = item.name === "Uploaded Document" ? "" : item.name;
         $("fProvider").value = item.provider || "";
-        $("fExpiry").value = item.status === "ACTIVE" && item.expiryDate >= todayIso() ? item.expiryDate : "";
+        $("fExpiry").value = !renewing && item.status === "ACTIVE" && item.expiryDate >= todayIso() ? item.expiryDate : "";
         const r = document.querySelector(`input[name="fType"][value="${typeInfo(item.type).v}"]`);
         if (r) r.checked = true;
       }
@@ -1155,20 +1448,68 @@
     }
     $("addManualBtn").addEventListener("click", () => openItemDialog());
 
-    // "before it expires." -> "We'll email you on 21 Dec 2026, 1 month before it expires."
+    // "before it expires." -> "We'll remind you on 21 Dec 2026, 1 month before it expires."
     function updateLeadHint() {
       const lead = Number(document.querySelector('input[name="fLead"]:checked')?.value || DEFAULT_LEAD);
       const exp = $("fExpiry").value;
-      const words = `${LEAD_WORDS[lead]} before it expires`;
+      const words = `${leadWords(lead)} before it expires`;
       if (!exp) { $("leadHint").textContent = `${words}. We keep nudging until you renew or snooze.`; return; }
       const when = parseDate(exp) - lead * MS_DAY;
-      $("leadHint").textContent = when <= parseDate(todayIso())
-        ? `${words}. That's already passed, so we'll email you right away.`
-        : `We'll email you on ${fmtDate(new Date(when).toISOString().slice(0, 10))}, ${words}.`;
+      $("leadHint").textContent = when <= todayUtc()
+        ? `${words}. That's already passed, so we'll remind you right away.`
+        : `We'll remind you on ${fmtDate(isoOf(when))}, ${words}.`;
     }
     $("leadPicker").addEventListener("change", updateLeadHint);
     $("fExpiry").addEventListener("input", updateLeadHint);
-    $("quickDates").addEventListener("click", () => setTimeout(updateLeadHint));
+
+    $("itemForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const form = ev.target;
+      if (!form.checkValidity()) { form.reportValidity(); return; }
+      const name = $("fName").value.trim();
+      if (!name) { $("fName").value = ""; form.reportValidity(); return; }
+      const btn = $("itemSubmit");
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span>Saving…`;
+      const body = {
+        name,
+        type: form.querySelector('input[name="fType"]:checked').value,
+        provider: $("fProvider").value.trim(),
+        expiryDate: $("fExpiry").value,
+        leadDays: Number(form.querySelector('input[name="fLead"]:checked').value),
+      };
+      if (editingId) body.itemId = editingId;
+      try {
+        const res = await sendJson("/items", body);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Couldn't save");
+        itemDialog.close();
+        toast(`${body.name} saved · reminder ${daysLeft(body.expiryDate) <= body.leadDays ? "on its way" : "scheduled"}`);
+        await loadItems();
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    });
+
+    async function submitManualDate(ev, form) {
+      ev.preventDefault();
+      const item = itemById(form.dataset.id);
+      const expiryDate = form.querySelector('input[type="date"]').value;
+      if (!item || !expiryDate) return;
+      if (expiryDate < todayIso()) { toast("That date has already passed. Enter the date the new one expires.", "error"); return; }
+      const btn = form.querySelector("button");
+      btn.disabled = true;
+      try {
+        const res = await sendJson("/items", { itemId: item.itemId, name: item.name, type: item.type, provider: item.provider, expiryDate, leadDays: leadOf(item) });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't save the date");
+        toast("Date saved · reminder scheduled");
+      } catch (err) { toast(err.message, "error"); btn.disabled = false; }
+      await loadItems();
+    }
 
     // ---------- calendar subscription ----------
     const calDialog = $("calDialog");
@@ -1204,14 +1545,15 @@
     }
 
     async function loadCalendarLink(rotate = false) {
+      $("calLoading").textContent = "Getting your private link…";
       $("calLoading").hidden = false;
       $("calReady").hidden = true;
       try {
-        const res = await apiFetch("/calendar-feed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rotate }) });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Couldn't get your calendar link");
+        const res = await sendJson("/calendar-feed", { rotate });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.url) throw new Error(data.error || "Couldn't get your calendar link");
         renderCalendarTile(data);
-        const webcal = data.url.replace(/^https:/, "webcal:");
+        const webcal = data.url.replace(/^https?:/, "webcal:");
         $("calUrl").value = data.url;
         $("calWebcal").href = webcal;
         $("calGoogle").href = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
@@ -1229,78 +1571,31 @@
     });
     $("calRotate").addEventListener("click", () => loadCalendarLink(true));
 
-    $("itemForm").addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      const form = ev.target;
-      if (!form.checkValidity()) { form.querySelector(":invalid")?.focus(); form.querySelectorAll(".input").forEach((i) => i.checkValidity()); return; }
-      const btn = $("itemSubmit");
-      const label = btn.textContent;
-      btn.disabled = true;
-      btn.innerHTML = `<span class="spinner"></span>Saving…`;
-      const body = {
-        name: $("fName").value.trim(),
-        type: form.querySelector('input[name="fType"]:checked').value,
-        provider: $("fProvider").value.trim(),
-        expiryDate: $("fExpiry").value,
-        leadDays: Number(form.querySelector('input[name="fLead"]:checked').value),
-      };
-      if (editingIdx !== null) body.itemId = currentItems[editingIdx].itemId;
-      try {
-        const res = await apiFetch("/items", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "Couldn't save");
-        itemDialog.close();
-        toast(`${body.name} saved · reminder ${humanDays(daysLeft(body.expiryDate)) === "today" ? "set" : "scheduled"}`);
-        await loadItems();
-      } catch (err) {
-        toast(err.message, "error");
-      } finally {
-        btn.disabled = false;
-        btn.textContent = label;
-      }
-    });
-
-    async function submitManualDate(ev, idx) {
-      ev.preventDefault();
-      const item = currentItems[idx];
-      const expiryDate = ev.target.querySelector('input[type="date"]').value;
-      if (!expiryDate) return;
-      if (expiryDate < todayIso()) { toast("That date has already passed. Enter the date the new one expires.", "error"); return; }
-      const btn = ev.target.querySelector("button");
-      btn.disabled = true;
-      try {
-        const res = await apiFetch("/items", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemId: item.itemId, name: item.name, type: item.type, provider: item.provider, expiryDate, leadDays: leadOf(item) }),
-        });
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't save the date");
-        toast("Date saved · reminder scheduled");
-      } catch (err) { toast(err.message, "error"); }
-      await loadItems();
-    }
-
     // ---------- stop / remove ----------
     const confirmDialog = $("confirmDialog");
-    let stopIdx = null;
-    function confirmStop(idx) {
-      stopIdx = idx;
-      const item = currentItems[idx];
+    let stopId = null;
+    function confirmStop(id) {
+      const item = itemById(id);
+      if (!item) return;
+      stopId = id;
       const active = item.status === "ACTIVE" || item.status === "PROCESSING";
       $("confirmTitle").textContent = active ? "Stop reminders?" : "Remove this item?";
       $("confirmText").textContent = active
-        ? `You won't get any more emails about "${item.name}". It will be removed from your list.`
+        ? `You won't get any more reminders about "${item.name}". It will be removed from your list.`
         : `"${item.name}" will be removed from your list.`;
       $("confirmOk").textContent = active ? "Stop reminders" : "Remove";
       confirmDialog.showModal();
     }
     $("confirmOk").addEventListener("click", async () => {
-      const item = currentItems[stopIdx];
+      const item = itemById(stopId);
+      if (!item) { confirmDialog.close(); return; }
       const btn = $("confirmOk");
       btn.disabled = true;
       try {
         const res = await apiFetch(`/items/${encodeURIComponent(item.itemId)}`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Couldn't remove it");
+        if (!res.ok && res.status !== 404) throw new Error("Couldn't remove it. Try again.");
         confirmDialog.close();
+        if (watchingId === item.itemId) { watchingId = null; resetDropzone(); }
         toast(`${item.name} removed`);
       } catch (err) { toast(err.message, "error"); }
       btn.disabled = false;
@@ -1325,6 +1620,18 @@
       dropzone.classList.remove("dragover");
       if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
     });
+    // A file dropped beside the box shouldn't navigate the tab away from the app.
+    addEventListener("dragover", (e) => e.preventDefault());
+    addEventListener("drop", (e) => e.preventDefault());
+    // Paste a screenshot or copied photo anywhere on the dashboard.
+    document.addEventListener("paste", (e) => {
+      if (!session() || document.querySelector("dialog[open]")) return;
+      const file = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith("image/") || f.type === "application/pdf");
+      if (!file) return;
+      e.preventDefault();
+      dropzone.scrollIntoView({ behavior: "smooth", block: "center" });
+      uploadFile(file);
+    });
 
     function setStep(name, state) {
       const el = dropzone.querySelector(`[data-step="${name}"]`);
@@ -1334,6 +1641,7 @@
     function resetDropzone() {
       uploading = false;
       dropzone.classList.remove("busy");
+      dropzone.removeAttribute("aria-busy");
       $("dzIdle").hidden = false;
       $("dzBusy").hidden = true;
     }
@@ -1388,7 +1696,7 @@
       fileInput.value = "";
       if (uploading || !file) return;
       if (!session()) return;
-      let ext = (file.name.split(".").pop() || "").toLowerCase();
+      let ext = ((file.name || "").split(".").pop() || "").toLowerCase();
       const isPdf = ext === "pdf" || file.type === "application/pdf";
       if (!isPdf) {
         if (!file.type.startsWith("image/") && !CONTENT_TYPES[ext]) { toast("Use a photo (JPG, PNG, WEBP) or a PDF.", "error"); return; }
@@ -1407,6 +1715,7 @@
 
       uploading = true;
       dropzone.classList.add("busy");
+      dropzone.setAttribute("aria-busy", "true");
       $("dzIdle").hidden = true;
       $("dzBusy").hidden = false;
       $("uploadBar").style.width = "0%";
@@ -1415,12 +1724,13 @@
       setStep("upload", "doing"); setStep("read", ""); setStep("done", "");
       try {
         const resp = await apiFetch(`/upload-url?ext=${encodeURIComponent(ext === "jpeg" ? "jpg" : ext)}&dateOrder=${localeDateOrder()}`);
-        const data = await resp.json();
+        const data = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(data.error || "Couldn't start the upload");
         await putWithProgress(data.uploadUrl, file, contentType);
         setStep("upload", "done");
         setStep("read", "doing");
         watchingId = data.itemId;
+        pollTicks = 0;
         await loadItems();
       } catch (err) {
         toast(err.message, "error");
@@ -1430,9 +1740,10 @@
 
     function watchUpload() {
       if (!watchingId) return;
-      const item = currentItems.find((i) => i.itemId === watchingId);
-      if (!item || item.status === "PROCESSING") return;
+      const item = itemById(watchingId);
+      if (item && item.status === "PROCESSING") return;
       watchingId = null;
+      if (!item) { resetDropzone(); return; }
       setStep("read", item.status === "NEEDS_DATE" ? "fail" : "done");
       if (item.status === "NEEDS_DATE" && item.suggestedDate) {
         setStep("done", "fail");
@@ -1444,13 +1755,12 @@
         toast(item.expiredOn ? "That document has already expired. Add the renewed date." : "We couldn't find a date. Add it in the list.", "error");
       } else {
         setStep("done", "done");
-        $("doneText").textContent = `${item.name} · expires ${fmtDate(item.expiryDate)}`;
-        toast(`Found it: ${item.name}, expires ${fmtDate(item.expiryDate)}`);
+        $("doneText").textContent = item.expiryDate ? `${item.name} · expires ${fmtDate(item.expiryDate)}` : item.name;
+        toast(item.expiryDate ? `Found it: ${item.name}, expires ${fmtDate(item.expiryDate)}` : `${item.name} added`);
       }
       setTimeout(resetDropzone, 4500);
     }
 
-    // ---------- misc ----------
     // ---------- browser push notifications (D31) ----------
     const VAPID_KEY = "__LAPSE_VAPID_KEY__";
     const pushConfigured = !VAPID_KEY.startsWith("__") && VAPID_KEY.length > 40;
@@ -1485,9 +1795,9 @@
       const sub = await currentSubscription();
       if (sub && Notification.permission === "granted") {
         return set("Alerts arrive here even when Lapse is closed.",
-          `<button class="btn ghost sm" type="button" onclick="testPush(this)">Test</button><button class="btn subtle sm" type="button" onclick="disablePush()">Turn off</button>`, true);
+          `<button class="btn ghost sm" type="button" data-act="push-test">Test</button><button class="btn subtle sm" type="button" data-act="push-off">Turn off</button>`, true);
       }
-      set("Pop-up alerts, even when Lapse is closed.", `<button class="btn sm" type="button" onclick="enablePush(this)">Turn on</button>`);
+      set("Pop-up alerts, even when Lapse is closed.", `<button class="btn sm" type="button" data-act="push-on">Turn on</button>`);
     }
 
     async function enablePush(btn) {
@@ -1499,10 +1809,7 @@
         if (!reg) throw new Error("Couldn't start notifications in this browser.");
         const sub = (await reg.pushManager.getSubscription()) ||
           (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_KEY) }));
-        const res = await apiFetch("/push/subscribe", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subscription: sub.toJSON(), device: deviceName() }),
-        });
+        const res = await sendJson("/push/subscribe", { subscription: sub.toJSON(), device: deviceName() });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't turn on notifications");
         toast("Notifications are on for this device");
         await testPush();
@@ -1517,7 +1824,7 @@
     async function disablePush(silent = false) {
       const sub = await currentSubscription();
       if (sub) {
-        try { await apiFetch("/push/unsubscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) }); } catch {}
+        try { await sendJson("/push/unsubscribe", { endpoint: sub.endpoint }); } catch {}
         await sub.unsubscribe();
       }
       if (!silent) { toast("Notifications are off for this device"); renderPush(); }
@@ -1534,14 +1841,29 @@
       finally { if (btn) btn.disabled = false; }
     }
 
+    // ---------- start ----------
     addEventListener("scroll", () => $("topbar").classList.toggle("scrolled", scrollY > 4), { passive: true });
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && session()) { loadItems(); refreshCalendarTile(); } });
+    function refreshAll() {
+      if (!session()) return;
+      pollTicks = 0;
+      loadItems();
+      refreshCalendarTile();
+    }
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAll(); });
+    addEventListener("online", refreshAll);
+    addEventListener("offline", () => toast("You're offline. Showing the last list we loaded.", "error"));
 
     (async () => {
       renderAuth();
       if (loginToken) await completeSignIn(loginToken);
       renderAuth();
-      if (session()) { loadItems(); renderPush(); refreshCalendarTile(); }
+      const s = session();
+      if (!s) return;
+      const cached = readCache(s.email);
+      if (cached) { currentItems = cached; render(); }
+      loadItems();
+      renderPush();
+      refreshCalendarTile();
     })();
   </script>
 </body>

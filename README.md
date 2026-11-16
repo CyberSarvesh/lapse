@@ -35,6 +35,16 @@ Built for the **AWS Weekend Challenge: "No Pipeline, No Problem"**.
    python scripts/serve_web.py
    ```
 
+### Frontend only (no Docker)
+
+To work on the page itself, run it against an in-memory fake API with sample data:
+
+```powershell
+python scripts/dev_mock.py
+```
+
+Open `http://127.0.0.1:8765`, sign in with any email and press **Local mode: open sign-in link**. Uploads cycle through the three reader outcomes (date found, date to confirm, no date). Add `--empty` to see the first-run screens. Nothing here runs the Lambda handlers; use the unit tests and LocalStack for those.
+
 ## Deploy to AWS
 
 ```bash

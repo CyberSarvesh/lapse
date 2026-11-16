@@ -8,6 +8,13 @@ from common.auth import authenticated_email
 from common.db import list_user_items
 from common.http import json_response
 
+# What the page needs. Storage keys, the upload's S3 key and the workflow's
+# execution ARN stay on the server.
+PUBLIC_FIELDS = (
+    "itemId", "name", "type", "provider", "expiryDate", "status", "leadDays",
+    "suggestedDate", "expiredOn", "followUpCount", "createdAt", "updatedAt",
+)
+
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     """Return the signed-in user's items sorted by expiryDate."""
@@ -15,5 +22,5 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if not email:
         return json_response(401, {"error": "Sign in first"})
 
-    items = list_user_items(email)
+    items = [{k: item[k] for k in PUBLIC_FIELDS if k in item} for item in list_user_items(email)]
     return json_response(200, {"items": items})

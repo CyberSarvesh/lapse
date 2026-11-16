@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -642,3 +643,74 @@ class ExpiryDateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ItemInputTests(unittest.TestCase):
+    """What the item routes accept from, and send back to, the browser."""
+
+    def _save(self, body: object, existing: dict | None = None) -> tuple[dict, MagicMock]:
+        with (
+            patch("handlers.add_or_update_item.authenticated_email", return_value="a@b.com"),
+            patch("handlers.add_or_update_item.get_item", return_value=existing),
+            patch("handlers.add_or_update_item.put_item") as put,
+            patch("handlers.add_or_update_item.get_sfn_client") as sfn,
+            patch.dict("os.environ", {"STATE_MACHINE_ARN": "arn"}),
+        ):
+            sfn.return_value.start_execution.return_value = {"executionArn": "arn:exec"}
+            raw = body if isinstance(body, str) else json.dumps(body)
+            return add_or_update_item.handler({"body": raw}, None), put
+
+    def test_malformed_or_non_object_body_is_a_400_not_a_crash(self) -> None:
+        for raw in ("{not json", "[1, 2]", '"text"'):
+            with self.subTest(raw=raw):
+                res, put = self._save(raw)
+                self.assertEqual(res["statusCode"], 400)
+                put.assert_not_called()
+
+    def test_text_is_trimmed_capped_and_never_crashes_on_wrong_types(self) -> None:
+        res, put = self._save({"name": "  Car \n insurance  " + "x" * 300, "type": {"a": 1}, "provider": 42, "expiryDate": "2099-01-01"})
+        self.assertEqual(res["statusCode"], 200)
+        saved = put.call_args[0][0]
+        self.assertTrue(saved["name"].startswith("Car insurance"))
+        self.assertEqual(len(saved["name"]), 120)
+        self.assertEqual(saved["type"], "other")
+        self.assertEqual(saved["provider"], "42")
+
+    def test_unknown_item_id_creates_a_fresh_item(self) -> None:
+        _, put = self._save({"itemId": "USER#someone-else", "name": "Car", "expiryDate": "2099-01-01"})
+        self.assertNotEqual(put.call_args[0][0]["itemId"], "USER#someone-else")
+
+    def test_provider_can_be_cleared_but_is_kept_when_not_sent(self) -> None:
+        existing = {"itemId": "x1", "name": "Car", "provider": "ACME", "createdAt": "2026-01-01T00:00:00Z"}
+        _, put = self._save({"itemId": "x1", "provider": "", "expiryDate": "2099-01-01"}, existing)
+        self.assertEqual(put.call_args[0][0]["provider"], "")
+        _, put = self._save({"itemId": "x1", "expiryDate": "2099-01-01"}, existing)
+        self.assertEqual(put.call_args[0][0]["provider"], "ACME")
+        self.assertEqual(put.call_args[0][0]["itemId"], "x1")
+
+    def test_list_hides_storage_details(self) -> None:
+        stored = {
+            "PK": "USER#a@b.com", "SK": "ITEM#x1", "itemId": "x1", "email": "a@b.com", "name": "Car",
+            "expiryDate": "2099-01-01", "status": "ACTIVE", "s3Key": "uploads/x1.jpg", "executionArn": "arn:exec", "leadDays": 7,
+        }
+        with (
+            patch("handlers.list_items.authenticated_email", return_value="a@b.com"),
+            patch("handlers.list_items.list_user_items", return_value=[stored]),
+        ):
+            item = json.loads(list_items.handler({}, None)["body"])["items"][0]
+        self.assertEqual(item, {"itemId": "x1", "name": "Car", "expiryDate": "2099-01-01", "status": "ACTIVE", "leadDays": 7})
+
+
+class WebPageSourceTests(unittest.TestCase):
+    """Cheap guards on web/index.html, which has no build step to catch slips."""
+
+    html = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+
+    def test_deploy_placeholders_are_present(self) -> None:
+        # scripts/deploy_web.py fills these in; without them the page can't find its API.
+        self.assertEqual(self.html.count("__LAPSE_API_URL__"), 1)
+        self.assertEqual(self.html.count("__LAPSE_VAPID_KEY__"), 1)
+
+    def test_no_inline_event_handlers(self) -> None:
+        # Rows are rebuilt from user data; actions go through data-act + one listener.
+        self.assertIsNone(re.search(r"\son[a-z]+\s*=\s*[\"']", self.html))
