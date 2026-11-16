@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from common.aws_clients import get_bedrock_client, get_s3_client
+from common.dates import is_past, parse_expiry
 from common.db import (
     STATUS_NEEDS_DATE,
     get_item,
@@ -169,6 +170,16 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         # extracted name, provider and date are kept.
         _delete_document(bucket, s3_key)
 
+    # A document whose date has already passed (an expired policy, or the model
+    # picking up an issue date) must not schedule a reminder for the past: ask
+    # the user for the renewed date instead, and show when it expired.
+    expired_on = ""
+    if extracted["found"]:
+        parsed = parse_expiry(extracted["expiryDate"])
+        if parsed is None or is_past(parsed):
+            expired_on = extracted["expiryDate"] if parsed else ""
+            extracted = {**extracted, "found": False, "expiryDate": ""}
+
     if not extracted["found"]:
         put_item(
             {
@@ -183,6 +194,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 "expiryDate": "",
                 "s3Key": "",
                 "status": STATUS_NEEDS_DATE,
+                "expiredOn": expired_on,
                 "followUpCount": 0,
                 "createdAt": existing.get("createdAt") or now,
                 "updatedAt": now,

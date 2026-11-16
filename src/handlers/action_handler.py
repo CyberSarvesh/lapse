@@ -5,13 +5,13 @@ from __future__ import annotations
 import base64
 import html
 import json
-import re
 from typing import Any
 from urllib.parse import parse_qs
 
 from botocore.exceptions import ClientError
 
 from common.aws_clients import get_sfn_client
+from common.dates import check_future_expiry, today_utc
 from common.db import STATUS_ACTIVE, consume_action_link, get_action_link, get_item
 from common.http import html_response
 
@@ -83,7 +83,7 @@ def _handle_get(event: dict[str, Any]) -> dict[str, Any]:
             f'<form method="POST" action="/action">'
             f'<input type="hidden" name="id" value="{html.escape(action_id)}">'
             f'<label for="newExpiryDate">New expiry date (optional — restarts reminders for next cycle)</label>'
-            f'<input id="newExpiryDate" type="date" name="newExpiryDate">'
+            f'<input id="newExpiryDate" type="date" name="newExpiryDate" min="{today_utc().isoformat()}">'
             f'<button type="submit">Confirm: I renewed it</button>'
             f"</form>"
         )
@@ -108,10 +108,12 @@ def _handle_post(event: dict[str, Any]) -> dict[str, Any]:
     action_id = (params.get("id") or "").strip()
     new_expiry = (params.get("newExpiryDate") or "").strip()
 
-    if new_expiry and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", new_expiry):
+    date_error = check_future_expiry(new_expiry) if new_expiry else None
+    if date_error:
+        # The link is not consumed, so the user can go back and pick another date.
         return html_response(
             400,
-            _page("Invalid Date", "<h1>Invalid date format</h1><p>Please use YYYY-MM-DD.</p>"),
+            _page("Invalid Date", f"<h1>Check the date</h1><p>{html.escape(date_error)}</p><p>Go back and choose the new expiry date.</p>"),
         )
 
     if not action_id:

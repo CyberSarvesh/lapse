@@ -8,6 +8,7 @@ import secrets
 from typing import Any
 
 from common.aws_clients import get_ses_client
+from common.dates import describe_expiry
 from common.db import put_action_link
 
 
@@ -32,18 +33,19 @@ def handler(event: dict[str, Any], _context: Any) -> None:
     snooze_url = f"{api_base}/action?id={snooze_id}"
 
     prefix = f"[Follow-up #{follow_up_count}] " if follow_up_count > 0 else ""
-    subject = f"{prefix}Lapse reminder: {item_name} expires {expiry_date}"
+    when = describe_expiry(expiry_date)  # "expires in 12 days (…)" / "expired on …"
+    subject = f"{prefix}Lapse reminder: {item_name} {when}"
 
     safe_name = html.escape(item_name)
     safe_provider = html.escape(provider)
-    safe_expiry = html.escape(expiry_date)
+    safe_when = html.escape(when[:1].upper() + when[1:])
     provider_line = f" ({safe_provider})" if safe_provider else ""
 
     html_body = f"""<!doctype html>
 <html>
 <body style="font-family:system-ui,-apple-system,sans-serif;max-width:540px;margin:24px auto;color:#1f2937;">
   <h2 style="margin-bottom:8px;">{safe_name}{provider_line}</h2>
-  <p style="font-size:16px;">Expires on <strong>{safe_expiry}</strong>.</p>
+  <p style="font-size:16px;"><strong>{safe_when}</strong>.</p>
   <div style="margin:24px 0;">
     <a href="{renew_url}" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600;margin-right:12px;">I renewed it</a>
     <a href="{snooze_url}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600;">Remind me in 7 days</a>
@@ -53,7 +55,7 @@ def handler(event: dict[str, Any], _context: Any) -> None:
 </html>"""
 
     text_body = (
-        f"{item_name} expires on {expiry_date}.\n\n"
+        f"{item_name} {when}.\n\n"
         f"I renewed it: {renew_url}\n"
         f"Remind me in 7 days: {snooze_url}\n"
     )

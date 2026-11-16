@@ -352,5 +352,61 @@ class AuthTests(unittest.TestCase):
             self.assertIsNone(db.get_action_link("x"))
 
 
+class ExpiryDateTests(unittest.TestCase):
+    """An expiry date must be real and not already passed (a reminder for the past is useless)."""
+
+    def _add(self, expiry: str) -> dict:
+        with (
+            patch("handlers.add_or_update_item.authenticated_email", return_value="a@b.com"),
+            patch("handlers.add_or_update_item.get_item", return_value={}),
+            patch("handlers.add_or_update_item.put_item"),
+            patch("handlers.add_or_update_item.get_sfn_client") as sfn,
+            patch.dict(os.environ, {"STATE_MACHINE_ARN": "arn:sm"}),
+        ):
+            sfn.return_value.start_execution.return_value = {"executionArn": "arn:exec"}
+            return add_or_update_item.handler({"body": json.dumps({"name": "Car", "expiryDate": expiry})}, None)
+
+    def test_past_and_impossible_dates_are_rejected(self) -> None:
+        from datetime import timedelta
+        from common.dates import today_utc
+        for bad in ((today_utc() - timedelta(days=10)).isoformat(), "2026-02-31", "soon"):
+            with self.subTest(date=bad):
+                res = self._add(bad)
+                self.assertEqual(res["statusCode"], 400)
+
+    def test_today_and_future_dates_are_accepted(self) -> None:
+        from datetime import timedelta
+        from common.dates import today_utc
+        for good in (today_utc().isoformat(), (today_utc() + timedelta(days=30)).isoformat()):
+            with self.subTest(date=good):
+                self.assertEqual(self._add(good)["statusCode"], 200)
+
+    def test_extracted_past_date_asks_for_the_renewed_date(self) -> None:
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"img"), "Metadata": {"expiry": "2020-01-01"}}
+        with (
+            patch.dict(os.environ, {"LOCAL_MODE": "true", "UPLOADS_BUCKET": "uploads"}),
+            patch("handlers.extract_document.get_upload_lookup", return_value={"email": "a@b.com"}),
+            patch("handlers.extract_document.get_item", return_value={}),
+            patch("handlers.extract_document.get_s3_client", return_value=mock_s3),
+            patch("handlers.extract_document.put_item") as mock_put,
+        ):
+            res = extract_document.handler(
+                {"detail": {"bucket": {"name": "uploads"}, "object": {"key": "uploads/old1.png"}}}, None
+            )
+        self.assertFalse(res["found"])
+        saved = mock_put.call_args[0][0]
+        self.assertEqual(saved["status"], "NEEDS_DATE")
+        self.assertEqual(saved["expiredOn"], "2020-01-01")
+
+    def test_reminder_wording_matches_the_date(self) -> None:
+        from datetime import date
+        from common.dates import describe_expiry
+        today = date(2026, 11, 16)
+        self.assertEqual(describe_expiry("2026-11-06", today), "expired on 2026-11-06")
+        self.assertEqual(describe_expiry("2026-11-16", today), "expires today (2026-11-16)")
+        self.assertEqual(describe_expiry("2026-11-28", today), "expires in 12 days (2026-11-28)")
+
+
 if __name__ == "__main__":
     unittest.main()
