@@ -1,24 +1,32 @@
 """Upload the frontend to the stack's WebBucket with the API URL baked in.
 
 Usage:
-    python scripts/deploy_web.py --stack-name lapse
+    python scripts/deploy_web.py --stack-name lapse [--region us-east-1]
     python scripts/deploy_web.py --stack-name lapse-local --endpoint-url http://localhost:4566
 
 Reads the ApiUrl / WebBucketName / WebUrl stack outputs, replaces the
 ``__LAPSE_API_URL__`` placeholder in web/index.html and uploads it, so the page
 works without pasting the API URL into Connection settings.
+
+Uses the AWS CLI rather than boto3 so it works with every credential source
+the CLI supports (including ``aws login`` sessions).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import subprocess
+import tempfile
 from pathlib import Path
-
-import boto3
 
 PLACEHOLDER = "__LAPSE_API_URL__"
 INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
+
+
+def aws(args: list[str], common: list[str]) -> str:
+    return subprocess.run(["aws", *args, *common], check=True, capture_output=True, text=True).stdout
 
 
 def main() -> None:
@@ -28,12 +36,14 @@ def main() -> None:
     parser.add_argument("--region", default=None)
     args = parser.parse_args()
 
-    kwargs = {k: v for k, v in {"endpoint_url": args.endpoint_url, "region_name": args.region}.items() if v}
-    cfn = boto3.client("cloudformation", **kwargs)
-    outputs = {
-        o["OutputKey"]: o["OutputValue"]
-        for o in cfn.describe_stacks(StackName=args.stack_name)["Stacks"][0].get("Outputs", [])
-    }
+    common: list[str] = []
+    if args.endpoint_url:
+        common += ["--endpoint-url", args.endpoint_url]
+    if args.region:
+        common += ["--region", args.region]
+
+    stacks = json.loads(aws(["cloudformation", "describe-stacks", "--stack-name", args.stack_name, "--output", "json"], common))
+    outputs = {o["OutputKey"]: o["OutputValue"] for o in stacks["Stacks"][0].get("Outputs", [])}
     api_url, bucket = outputs["ApiUrl"], outputs["WebBucketName"]
 
     html = INDEX.read_text(encoding="utf-8")
@@ -41,13 +51,17 @@ def main() -> None:
         raise SystemExit(f"{PLACEHOLDER} not found in {INDEX}")
     html = html.replace(PLACEHOLDER, api_url.rstrip("/"))
 
-    boto3.client("s3", **kwargs).put_object(
-        Bucket=bucket,
-        Key="index.html",
-        Body=html.encode("utf-8"),
-        ContentType="text/html; charset=utf-8",
-        CacheControl="no-cache",
-    )
+    with tempfile.TemporaryDirectory() as tmp:
+        page = Path(tmp) / "index.html"
+        page.write_text(html, encoding="utf-8")
+        aws(
+            [
+                "s3", "cp", str(page), f"s3://{bucket}/index.html",
+                "--content-type", "text/html; charset=utf-8",
+                "--cache-control", "no-cache",
+            ],
+            common,
+        )
     print(f"Uploaded index.html to s3://{bucket} (API: {api_url})")
     if "WebUrl" in outputs:
         print(f"Open: {outputs['WebUrl']}")
