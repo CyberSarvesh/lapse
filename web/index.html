@@ -503,7 +503,7 @@
         <div class="card channel">
           <div class="ch-ico tone-accent"><svg class="i"><use href="#i-bell"/></svg></div>
           <div class="ch-main">
-            <div class="ch-title">This device</div>
+            <div class="ch-title">This device <span class="pill tone-ok" id="chPushPill" hidden>On</span></div>
             <div class="ch-sub" id="chPushText">Pop-up alerts, even when Lapse is closed.</div>
           </div>
           <div class="ch-act" id="chPushAct"></div>
@@ -511,8 +511,8 @@
         <div class="card channel">
           <div class="ch-ico tone-accent"><svg class="i"><use href="#i-cal"/></svg></div>
           <div class="ch-main">
-            <div class="ch-title">Calendar</div>
-            <div class="ch-sub">Every expiry date in Google, Apple or Outlook.</div>
+            <div class="ch-title">Calendar <span class="pill tone-ok" id="chCalPill" hidden>On</span></div>
+            <div class="ch-sub" id="chCalText">Every expiry date in Google, Apple or Outlook.</div>
           </div>
           <button class="btn ghost sm" type="button" id="calendarBtn">Set up</button>
         </div>
@@ -1172,6 +1172,37 @@
 
     // ---------- calendar subscription ----------
     const calDialog = $("calDialog");
+    function agoText(unixSeconds) {
+      const mins = Math.max(0, Math.round((Date.now() / 1000 - unixSeconds) / 60));
+      if (mins < 2) return "just now";
+      if (mins < 60) return `${mins} min ago`;
+      const h = Math.round(mins / 60);
+      if (h < 48) return `${h} h ago`;
+      return `${Math.round(h / 24)} days ago`;
+    }
+
+    // The tile shows what's really true: no link, link not used yet, or a calendar app syncing it.
+    function renderCalendarTile(status) {
+      const synced = status && status.url && status.lastSyncedAt;
+      $("chCalPill").hidden = !synced;
+      if (synced) {
+        $("chCalText").textContent = `${status.client || "Your calendar"} synced ${agoText(status.lastSyncedAt)}. New dates appear automatically.`;
+        $("calendarBtn").textContent = "Manage";
+      } else if (status && status.url) {
+        $("chCalText").textContent = "Your link is ready but no calendar has added it yet.";
+        $("calendarBtn").textContent = "Finish setup";
+      } else {
+        $("chCalText").textContent = "Every expiry date in Google, Apple or Outlook.";
+        $("calendarBtn").textContent = "Set up";
+      }
+    }
+    async function refreshCalendarTile() {
+      try {
+        const res = await apiFetch("/calendar-feed");
+        if (res.ok) renderCalendarTile(await res.json());
+      } catch {}
+    }
+
     async function loadCalendarLink(rotate = false) {
       $("calLoading").hidden = false;
       $("calReady").hidden = true;
@@ -1179,6 +1210,7 @@
         const res = await apiFetch("/calendar-feed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rotate }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Couldn't get your calendar link");
+        renderCalendarTile(data);
         const webcal = data.url.replace(/^https:/, "webcal:");
         $("calUrl").value = data.url;
         $("calWebcal").href = webcal;
@@ -1445,15 +1477,15 @@
 
     async function renderPush() {
       const text = $("chPushText"), act = $("chPushAct");
-      const set = (t, html) => { text.textContent = t; act.innerHTML = html; };
+      const set = (t, html, on = false) => { text.textContent = t; act.innerHTML = html; $("chPushPill").hidden = !on; };
       if (!pushConfigured) return set("Not set up on this Lapse yet.", "");
       if (isIOS && !isStandalone) return set("On iPhone: tap Share → Add to Home Screen, then open Lapse from there.", "");
       if (!pushSupported) return set("This browser can't show notifications.", "");
       if (Notification.permission === "denied") return set("Blocked. Allow notifications for this site in your browser settings.", "");
       const sub = await currentSubscription();
       if (sub && Notification.permission === "granted") {
-        return set("On for this device. Alerts arrive even when Lapse is closed.",
-          `<button class="btn ghost sm" type="button" onclick="testPush(this)">Test</button><button class="btn subtle sm" type="button" onclick="disablePush()">Turn off</button>`);
+        return set("Alerts arrive here even when Lapse is closed.",
+          `<button class="btn ghost sm" type="button" onclick="testPush(this)">Test</button><button class="btn subtle sm" type="button" onclick="disablePush()">Turn off</button>`, true);
       }
       set("Pop-up alerts, even when Lapse is closed.", `<button class="btn sm" type="button" onclick="enablePush(this)">Turn on</button>`);
     }
@@ -1503,13 +1535,13 @@
     }
 
     addEventListener("scroll", () => $("topbar").classList.toggle("scrolled", scrollY > 4), { passive: true });
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && session()) loadItems(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && session()) { loadItems(); refreshCalendarTile(); } });
 
     (async () => {
       renderAuth();
       if (loginToken) await completeSignIn(loginToken);
       renderAuth();
-      if (session()) { loadItems(); renderPush(); }
+      if (session()) { loadItems(); renderPush(); refreshCalendarTile(); }
     })();
   </script>
 </body>

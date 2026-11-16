@@ -528,6 +528,12 @@ Resources:
             ApiId: !Ref LapseApi
             Path: /calendar-feed
             Method: POST
+        FeedLinkStatus:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /calendar-feed
+            Method: GET
         ServeFeed:
           Type: HttpApi
           Properties:

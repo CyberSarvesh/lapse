@@ -1,6 +1,7 @@
 """Calendar subscription (D30).
 
-POST /calendar-feed      (signed in) -> {"url": ...}; {"rotate": true} replaces the link
+GET  /calendar-feed      (signed in) -> {"url", "lastSyncedAt", "client"} (url null if none yet)
+POST /calendar-feed      (signed in) -> same, creating the link; {"rotate": true} replaces it
 GET  /calendar/{token}.ics           -> iCalendar feed of the user's active items
 
 Calendar apps can't send a sign-in header, so the feed URL itself is the
@@ -14,6 +15,7 @@ import hashlib
 import os
 import re
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -51,24 +53,63 @@ def _app_url(event: dict[str, Any]) -> str:
 # Link management
 # ---------------------------------------------------------------------------
 
-def _get_or_create_link(event: dict[str, Any]) -> dict[str, Any]:
+def _status(event: dict[str, Any], record: dict[str, Any] | None) -> dict[str, Any]:
+    """What the page shows: the link (if any) and whether a calendar app is really fetching it."""
+    if not record:
+        return {"url": None, "lastSyncedAt": None, "client": None}
+    synced = record.get("lastSyncedAt")
+    return {
+        "url": f"{_api_origin(event)}/calendar/{record['token']}.ics",
+        "lastSyncedAt": int(synced) if synced is not None else None,
+        "client": record.get("client"),
+    }
+
+
+def _get_or_create_link(event: dict[str, Any], method: str) -> dict[str, Any]:
     email = authenticated_email(event)
     if not email:
         return json_response(401, {"error": "Sign in first"})
-    rotate = bool(parse_json_body(event).get("rotate"))
     table = get_dynamodb_table()
     current = table.get_item(Key={"PK": user_pk(email), "SK": FEED_SK}).get("Item")
+    if method == "GET":  # read-only: never creates a link just because the page looked
+        return json_response(200, _status(event, current))
 
-    if current and not rotate:
-        token = current["token"]
-    else:
-        if current:
-            table.delete_item(Key={"PK": _feed_pk(current["tokenHash"]), "SK": "META"})
-        token = secrets.token_urlsafe(24)
-        table.put_item(Item={"PK": _feed_pk(_hash(token)), "SK": "META", "email": email})
-        table.put_item(Item={"PK": user_pk(email), "SK": FEED_SK, "token": token, "tokenHash": _hash(token)})
+    if current and not parse_json_body(event).get("rotate"):
+        return json_response(200, _status(event, current))
+    if current:
+        table.delete_item(Key={"PK": _feed_pk(current["tokenHash"]), "SK": "META"})
+    token = secrets.token_urlsafe(24)
+    record = {"PK": user_pk(email), "SK": FEED_SK, "token": token, "tokenHash": _hash(token)}
+    table.put_item(Item={"PK": _feed_pk(_hash(token)), "SK": "META", "email": email})
+    table.put_item(Item=record)
+    return json_response(200, _status(event, record))
 
-    return json_response(200, {"url": f"{_api_origin(event)}/calendar/{token}.ics"})
+
+def calendar_client(user_agent: str) -> str | None:
+    """Name of the calendar app fetching the feed, or None for a person opening it in a browser."""
+    ua = user_agent or ""
+    if "Google-Calendar-Importer" in ua or "Google" in ua and "Calendar" in ua:
+        return "Google Calendar"
+    if any(k in ua for k in ("dataaccessd", "CalendarAgent", "iOS/", "macOS/")):
+        return "Apple Calendar"
+    if any(k in ua for k in ("Outlook", "Microsoft Office", "MSOffice", "Exchange")):
+        return "Outlook"
+    if "Mozilla/" in ua:  # an ordinary browser tab, not a subscription
+        return None
+    return "Calendar app" if ua else None
+
+
+def _record_sync(email: str, token_hash: str, client: str) -> None:
+    try:
+        get_dynamodb_table().update_item(
+            Key={"PK": user_pk(email), "SK": FEED_SK},
+            UpdateExpression="SET lastSyncedAt = :t, #c = :c",
+            ConditionExpression="tokenHash = :h",  # only for the current link, never recreate a deleted one
+            ExpressionAttributeNames={"#c": "client"},
+            ExpressionAttributeValues={":t": int(time.time()), ":c": client, ":h": token_hash},
+        )
+    except Exception:  # noqa: BLE001 - a status hint must never break the feed
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +190,10 @@ def _serve_feed(event: dict[str, Any]) -> dict[str, Any]:
     record = get_dynamodb_table().get_item(Key={"PK": _feed_pk(_hash(raw)), "SK": "META"}).get("Item")
     if not record:
         return not_found
+    headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+    client = calendar_client(headers.get("user-agent", ""))
+    if client:
+        _record_sync(record["email"], _hash(raw), client)
     body = build_calendar(list_user_items(record["email"]), _app_url(event))
     return {
         "statusCode": 200,
@@ -164,6 +209,7 @@ def _serve_feed(event: dict[str, Any]) -> dict[str, Any]:
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     method = ((event.get("requestContext") or {}).get("http") or {}).get("method", "GET").upper()
-    if method == "POST":
-        return _get_or_create_link(event)
+    path = (event.get("rawPath") or "").rstrip("/")
+    if method == "POST" or path.endswith("/calendar-feed"):
+        return _get_or_create_link(event, method)
     return _serve_feed(event)

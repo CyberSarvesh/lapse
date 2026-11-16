@@ -544,11 +544,28 @@ class CalendarFeedTests(unittest.TestCase):
             self.assertEqual(get(rotated)["statusCode"], 200)
             self.assertEqual(get(first)["statusCode"], 404)  # rotated away
             self.assertEqual(calendar_feed.handler({"requestContext": get_ctx, "pathParameters": {"token": "guess"}}, None)["statusCode"], 404)
+            # Status: read-only, and a calendar app's fetch (not a browser tab) marks it as synced.
+            status = lambda: json.loads(calendar_feed.handler({"rawPath": "/calendar-feed", "requestContext": get_ctx}, None)["body"])  # noqa: E731
+            self.assertIsNone(status()["lastSyncedAt"])
+            calendar_feed.handler({"requestContext": get_ctx, "headers": {"User-Agent": "Mozilla/5.0 Chrome/131"},
+                                   "pathParameters": {"token": rotated.rsplit("/", 1)[1]}}, None)
+            self.assertIsNone(status()["lastSyncedAt"])
         self.assertEqual(first, again)
         self.assertTrue(first.startswith("https://abc.execute-api.us-east-1.amazonaws.com/calendar/") and first.endswith(".ics"))
         self.assertNotEqual(first, rotated)
         # Only a hash of the token is used as the lookup key.
         self.assertFalse(any(rotated.rsplit("/", 1)[1].removesuffix(".ics") in pk for pk, _ in store))
+
+
+class CalendarClientTests(unittest.TestCase):
+    def test_calendar_apps_are_told_apart_from_browser_tabs(self) -> None:
+        from handlers.calendar_feed import calendar_client
+        self.assertEqual(calendar_client("Google-Calendar-Importer"), "Google Calendar")
+        self.assertEqual(calendar_client("iOS/18.1 (22B83) dataaccessd/1.0"), "Apple Calendar")
+        self.assertEqual(calendar_client("macOS/15.1 (24B83) CalendarAgent/1000"), "Apple Calendar")
+        self.assertEqual(calendar_client("Microsoft Office/16.0 (Windows NT 10.0; Microsoft Outlook 16.0)"), "Outlook")
+        self.assertIsNone(calendar_client("Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/131 Safari/537.36"))
+        self.assertIsNone(calendar_client(""))
 
 
 class WebPageTests(unittest.TestCase):
