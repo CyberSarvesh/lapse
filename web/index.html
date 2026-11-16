@@ -326,6 +326,17 @@
     .quick-dates { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
     .quick-dates button { font: inherit; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; }
     .quick-dates button:hover { color: var(--text); border-color: var(--border-strong); }
+    .seg { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+    @media (max-width: 460px) { .seg { grid-template-columns: repeat(3, 1fr); } }
+    .seg label { position: relative; }
+    .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+    .seg span { display: block; text-align: center; padding: 8px 4px; border: 1px solid var(--border-strong); border-radius: 9px; font-size: 12.5px; font-weight: 600; color: var(--muted); transition: all .15s; }
+    .seg input:checked + span { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .cal-actions { display: grid; gap: 10px; margin-top: 18px; }
+    .linklike { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+    .item-sub .bell { display: inline-flex; align-items: center; gap: 4px; }
+    .item-sub .bell svg { width: 13px; height: 13px; }
 
     /* ---------- Toasts ---------- */
     .toasts { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 100; display: grid; gap: 8px; width: min(420px, calc(100vw - 32px)); pointer-events: none; }
@@ -364,6 +375,7 @@
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16"/><path d="M20 20v-4h-4"/></symbol>
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4M6 12h10"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 14V11a6 6 0 0 0-12 0v3l-2 3h16z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.2v.1"/></symbol>
   </svg>
 
@@ -454,6 +466,7 @@
           <p id="summaryLine">Loading…</p>
         </div>
         <div class="dash-actions">
+          <button class="btn ghost" type="button" id="calendarBtn"><svg class="i"><use href="#i-cal"/></svg>Calendar</button>
           <button class="btn ghost" type="button" id="addManualBtn"><svg class="i"><use href="#i-plus"/></svg>Add manually</button>
           <button class="btn" type="button" id="snapBtn"><svg class="i"><use href="#i-camera"/></svg>Snap a document</button>
         </div>
@@ -553,12 +566,48 @@
           <button type="button" data-months="24">+2 years</button>
           <button type="button" data-months="120">+10 years</button>
         </div>
+        <div class="field" style="margin-top:18px">
+          <span class="lbl">Remind me</span>
+          <div class="seg" id="leadPicker" role="radiogroup" aria-label="When to send the first reminder">
+            <label><input type="radio" name="fLead" value="1"><span>1 day</span></label>
+            <label><input type="radio" name="fLead" value="7"><span>1 week</span></label>
+            <label><input type="radio" name="fLead" value="14"><span>2 weeks</span></label>
+            <label><input type="radio" name="fLead" value="30" checked><span>1 month</span></label>
+            <label><input type="radio" name="fLead" value="60"><span>2 months</span></label>
+            <label><input type="radio" name="fLead" value="90"><span>3 months</span></label>
+          </div>
+          <div class="muted" id="leadHint" style="font-size:13px;margin-top:7px">before it expires.</div>
+        </div>
       </div>
       <div class="dlg-foot">
         <button class="btn ghost" type="button" data-close>Cancel</button>
         <button class="btn" type="submit" id="itemSubmit">Save &amp; schedule</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Calendar subscription dialog -->
+  <dialog id="calDialog" aria-labelledby="calTitle">
+    <div class="dlg-head">
+      <h2 id="calTitle">Put your renewals in your calendar</h2>
+      <button class="chip-btn" type="button" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="dlg-body">
+      <p class="muted" style="font-size:14px">Subscribe once and every item you track shows up on its expiry date, with an alert before it and the day before. New items and date changes appear automatically.</p>
+      <div id="calLoading" class="muted" style="margin-top:16px;font-size:14px">Getting your private link…</div>
+      <div id="calReady" hidden>
+        <div class="cal-actions">
+          <a class="btn" id="calGoogle" target="_blank" rel="noopener"><svg class="i"><use href="#i-cal"/></svg>Add to Google Calendar</a>
+          <a class="btn ghost" id="calWebcal"><svg class="i"><use href="#i-cal"/></svg>Apple Calendar or Outlook</a>
+        </div>
+        <label class="lbl" for="calUrl" style="margin-top:18px">Or copy your private link</label>
+        <div style="display:flex;gap:8px">
+          <input class="input" id="calUrl" readonly style="font-size:13px">
+          <button class="btn ghost" type="button" id="calCopy">Copy</button>
+        </div>
+        <p class="muted" style="font-size:12.5px;margin-top:10px">Anyone with this link can see your item names and dates, so keep it private. Calendars refresh it every few hours. <button type="button" class="linklike" id="calRotate">Reset link</button> to cut off old copies.</p>
+      </div>
+    </div>
   </dialog>
 
   <!-- Confirm dialog -->
@@ -859,12 +908,25 @@
       }).join("");
     }
 
+    const DEFAULT_LEAD = 30;
+    const leadOf = (item) => Number(item.leadDays) || DEFAULT_LEAD;
+    const LEAD_WORDS = { 1: "1 day", 7: "1 week", 14: "2 weeks", 30: "1 month", 60: "2 months", 90: "3 months" };
+    // "Reminder 28 Oct" for active items whose first reminder is still ahead.
+    function reminderLabel(item, c) {
+      if (item.status !== "ACTIVE" || c.d === undefined || c.d < 0) return "";
+      const lead = leadOf(item);
+      if (c.d <= lead) return `<span class="bell">${icon("i-bell")}Reminding you now</span>`;
+      const when = new Date(parseDate(item.expiryDate) - lead * MS_DAY);
+      return `<span class="bell" title="${LEAD_WORDS[lead] || lead + " days"} before">${icon("i-bell")}Reminder ${when.toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC", ...(when.getUTCFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) })}</span>`;
+    }
+
     function itemRow({ item, idx, c }) {
       const t = typeInfo(item.type);
       const sub = [
         item.provider ? esc(item.provider) : "",
         t.label === "ID" ? "Passport / ID" : t.label,
         item.expiryDate ? `${c.d < 0 ? "Expired" : "Expires"} ${fmtDate(item.expiryDate)}` : "",
+        reminderLabel(item, c),
       ].filter(Boolean).join('<span class="sep">·</span>');
 
       let right = c.pill || "";
@@ -1042,11 +1104,56 @@
         const r = document.querySelector(`input[name="fType"][value="${typeInfo(item.type).v}"]`);
         if (r) r.checked = true;
       }
+      const lead = document.querySelector(`input[name="fLead"][value="${item ? leadOf(item) : DEFAULT_LEAD}"]`);
+      if (lead) lead.checked = true;
+      updateLeadHint();
       $("fExpiry").min = todayIso();
       itemDialog.showModal();
       setTimeout(() => $(item ? "fExpiry" : "fName").focus(), 30);
     }
     $("addManualBtn").addEventListener("click", () => openItemDialog());
+
+    // "before it expires." -> "We'll email you on 21 Dec 2026, 1 month before it expires."
+    function updateLeadHint() {
+      const lead = Number(document.querySelector('input[name="fLead"]:checked')?.value || DEFAULT_LEAD);
+      const exp = $("fExpiry").value;
+      const words = `${LEAD_WORDS[lead]} before it expires`;
+      if (!exp) { $("leadHint").textContent = `${words}. We keep nudging until you renew or snooze.`; return; }
+      const when = parseDate(exp) - lead * MS_DAY;
+      $("leadHint").textContent = when <= parseDate(todayIso())
+        ? `${words}. That's already passed, so we'll email you right away.`
+        : `We'll email you on ${fmtDate(new Date(when).toISOString().slice(0, 10))}, ${words}.`;
+    }
+    $("leadPicker").addEventListener("change", updateLeadHint);
+    $("fExpiry").addEventListener("input", updateLeadHint);
+    $("quickDates").addEventListener("click", () => setTimeout(updateLeadHint));
+
+    // ---------- calendar subscription ----------
+    const calDialog = $("calDialog");
+    async function loadCalendarLink(rotate = false) {
+      $("calLoading").hidden = false;
+      $("calReady").hidden = true;
+      try {
+        const res = await apiFetch("/calendar-feed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rotate }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Couldn't get your calendar link");
+        const webcal = data.url.replace(/^https:/, "webcal:");
+        $("calUrl").value = data.url;
+        $("calWebcal").href = webcal;
+        $("calGoogle").href = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+        $("calLoading").hidden = true;
+        $("calReady").hidden = false;
+        if (rotate) toast("New link made. Old calendar links no longer work.");
+      } catch (err) {
+        $("calLoading").textContent = err.message;
+      }
+    }
+    $("calendarBtn").addEventListener("click", () => { calDialog.showModal(); loadCalendarLink(); });
+    $("calCopy").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText($("calUrl").value); toast("Link copied"); }
+      catch { $("calUrl").select(); toast("Press Ctrl+C to copy", "error"); }
+    });
+    $("calRotate").addEventListener("click", () => loadCalendarLink(true));
 
     $("itemForm").addEventListener("submit", async (ev) => {
       ev.preventDefault();
@@ -1061,6 +1168,7 @@
         type: form.querySelector('input[name="fType"]:checked').value,
         provider: $("fProvider").value.trim(),
         expiryDate: $("fExpiry").value,
+        leadDays: Number(form.querySelector('input[name="fLead"]:checked').value),
       };
       if (editingIdx !== null) body.itemId = currentItems[editingIdx].itemId;
       try {
@@ -1089,7 +1197,7 @@
       try {
         const res = await apiFetch("/items", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemId: item.itemId, name: item.name, type: item.type, provider: item.provider, expiryDate }),
+          body: JSON.stringify({ itemId: item.itemId, name: item.name, type: item.type, provider: item.provider, expiryDate, leadDays: leadOf(item) }),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't save the date");
         toast("Date saved · reminder scheduled");
