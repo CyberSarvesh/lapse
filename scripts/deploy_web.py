@@ -22,7 +22,17 @@ import tempfile
 from pathlib import Path
 
 PLACEHOLDER = "__LAPSE_API_URL__"
-INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
+VAPID_PLACEHOLDER = "__LAPSE_VAPID_KEY__"
+WEB = Path(__file__).resolve().parents[1] / "web"
+INDEX = WEB / "index.html"
+# Other files the app serves (service worker, manifest, icons) and their types.
+ASSETS = {
+    "sw.js": "text/javascript; charset=utf-8",
+    "manifest.webmanifest": "application/manifest+json",
+    "icon-192.png": "image/png",
+    "icon-512.png": "image/png",
+    "apple-touch-icon.png": "image/png",
+}
 
 
 def aws(args: list[str], common: list[str]) -> str:
@@ -50,6 +60,7 @@ def main() -> None:
     if PLACEHOLDER not in html:
         raise SystemExit(f"{PLACEHOLDER} not found in {INDEX}")
     html = html.replace(PLACEHOLDER, api_url.rstrip("/"))
+    html = html.replace(VAPID_PLACEHOLDER, outputs.get("VapidPublicKey", ""))
 
     with tempfile.TemporaryDirectory() as tmp:
         page = Path(tmp) / "index.html"
@@ -62,7 +73,11 @@ def main() -> None:
             ],
             common,
         )
-    print(f"Uploaded index.html to s3://{bucket} (API: {api_url})")
+    for name, content_type in ASSETS.items():
+        if (WEB / name).exists():
+            aws(["s3", "cp", str(WEB / name), f"s3://{bucket}/{name}", "--content-type", content_type], common)
+    print(f"Uploaded index.html and {len(ASSETS)} assets to s3://{bucket} (API: {api_url})")
+    print("Browser notifications:", "on" if outputs.get("VapidPublicKey") else "off (run scripts/setup_push.py)")
     if outputs.get("WebDistributionId"):
         # Drop CloudFront's cached copy so the new page is served right away.
         aws(
