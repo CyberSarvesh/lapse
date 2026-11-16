@@ -44,7 +44,7 @@ python scripts/deploy_web.py --stack-name <your-stack-name>
 The last command uploads `web/index.html` to the stack's web bucket with the API URL filled in and prints the site URL. If your account has S3 Block Public Access turned on at the account level, the bucket policy is rejected; in that case open the page locally with `python scripts/serve_web.py` instead.
 
 Before deploying:
-- Enable model access in Amazon Bedrock for the `BedrockModelId` you use. It must accept image and PDF input (default: Claude Haiku 4.5 via the `us.` inference profile). If the model can't be called, uploads fall back to "needs a date" and the error is logged in the extractor's CloudWatch logs.
+- Enable model access in Amazon Bedrock for the `BedrockModelId` you use. It must accept image and PDF input (default: Amazon Nova Lite via the `us.` inference profile, about $0.06 per million input tokens, so each document costs a tiny fraction of a cent). If the model can't be called, uploads fall back to "needs a date" and the error is logged in the extractor's CloudWatch logs.
 - Verify your `SenderEmail` (and test recipient if in the SES sandbox) in Amazon SES.
 
 For a live demo, set `DemoMode=true` during `sam deploy`.
