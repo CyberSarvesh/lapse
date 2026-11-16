@@ -46,7 +46,6 @@ Conditions:
 
 Globals:
   Function:
-    CodeUri: src/
     Runtime: python3.13
     Architectures:
       - !Ref LambdaArchitecture
@@ -156,6 +155,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.extract_document.handler
+      CodeUri: src/
       Timeout: 60
       Policies:
         - DynamoDBCrudPolicy:
@@ -176,11 +176,13 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.compute_reminder.handler
+      CodeUri: src/
 
   SendReminderFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.send_reminder.handler
+      CodeUri: src/
       Environment:
         Variables:
           API_BASE_URL: !Sub "https://${LapseApi}.execute-api.${AWS::Region}.amazonaws.com"
@@ -271,6 +273,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.auth.handler
+      CodeUri: src/
       Environment:
         Variables:
           APP_URL: !If [HasAppUrl, !Ref AppUrl, !GetAtt WebBucket.WebsiteURL]
@@ -303,6 +306,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.get_upload_url.handler
+      CodeUri: src/
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LapseTable
@@ -320,6 +324,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.list_items.handler
+      CodeUri: src/
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref LapseTable
@@ -335,6 +340,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.add_or_update_item.handler
+      CodeUri: src/
       Environment:
         Variables:
           STATE_MACHINE_ARN: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AWS::StackName}-lapse"
@@ -355,6 +361,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.delete_item.handler
+      CodeUri: src/
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LapseTable
@@ -370,6 +377,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.action_handler.handler
+      CodeUri: src/
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LapseTable
