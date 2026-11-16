@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import html
 import logging
 import os
 import re
@@ -20,6 +19,7 @@ from common.auth import (
     normalize_email,
 )
 from common.aws_clients import get_ses_client
+from common.brand import e, email_button, email_html
 from common.http import json_response, parse_json_body
 
 logger = logging.getLogger()
@@ -47,7 +47,18 @@ def _sign_in_url(event: dict[str, Any], token: str) -> str:
 
 
 def _send_sign_in_email(email: str, url: str) -> None:
-    safe_url = html.escape(url, quote=True)
+    content = (
+        f'<div style="margin:22px 0 6px;">{email_button(url, "Sign in to Lapse")}</div>'
+        '<p style="margin:10px 0 0;font-size:13px;line-height:1.5;color:#8b9592;">Button not working? Paste this link into your browser:<br>'
+        f'<a href="{e(url, quote=True)}" style="color:#0f766e;word-break:break-all;">{e(url)}</a></p>'
+    )
+    html_body = email_html(
+        preheader="Your one-time sign-in link. It works once and expires in 15 minutes.",
+        heading="Sign in to Lapse",
+        intro="Tap the button to sign in on this device. The link works once and expires in 15 minutes.",
+        content=content,
+        footer="Didn't ask for this? You can ignore it. Nobody can sign in without opening this email.",
+    )
     get_ses_client().send_email(
         Source=os.environ["SENDER_EMAIL"],
         Destination={"ToAddresses": [email]},
@@ -59,14 +70,7 @@ def _send_sign_in_email(email: str, url: str) -> None:
                     "If you didn't ask for it, ignore this email.\n",
                     "Charset": "UTF-8",
                 },
-                "Html": {
-                    "Data": f"""<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;max-width:540px;margin:24px auto;color:#1f2937;">
-  <h2>Sign in to Lapse</h2>
-  <p><a href="{safe_url}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600;">Sign in</a></p>
-  <p style="font-size:12px;color:#6b7280;">The link works once and expires in 15 minutes. If you didn't ask for it, ignore this email.</p>
-</body></html>""",
-                    "Charset": "UTF-8",
-                },
+                "Html": {"Data": html_body, "Charset": "UTF-8"},
             },
         },
     )

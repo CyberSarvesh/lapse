@@ -2,14 +2,35 @@
 
 from __future__ import annotations
 
-import html
 import os
 import secrets
 from typing import Any
 
 from common.aws_clients import get_ses_client
-from common.dates import describe_expiry
+from common.brand import e, email_button, email_html, email_item_card, nice_date
+from common.dates import days_until, describe_expiry
 from common.db import put_action_link
+
+
+def _app_url() -> str:
+    return (os.environ.get("APP_URL") or os.environ["API_BASE_URL"]).rstrip("/") + "/"
+
+
+def _copy(item_name: str, expiry: str, follow_up: int) -> tuple[str, str, str]:
+    """(subject, heading, preheader) worded for how close the date is."""
+    days = days_until(expiry)
+    if days is not None and days < 0:
+        heading = f"{item_name} expired on {nice_date(expiry)}"
+        pre = "Renewed it? Add the new date in one tap so Lapse can track the next one."
+    elif days == 0:
+        heading = f"{item_name} expires today"
+        pre = "Last chance to renew. Already done? Tell Lapse in one tap."
+    else:
+        heading = f"{item_name} expires in {days} day{'s' if days != 1 else ''}" if days is not None else f"{item_name} is due"
+        pre = f"Due {nice_date(expiry)}. Renew it, or snooze this reminder for a week."
+    prefix = f"Reminder {follow_up + 1}: " if follow_up > 0 else ""
+    subject = heading if days is None or days < 0 else f"{heading} · {nice_date(expiry)}"
+    return f"{prefix}{subject}", heading, pre
 
 
 def handler(event: dict[str, Any], _context: Any) -> None:
@@ -19,6 +40,7 @@ def handler(event: dict[str, Any], _context: Any) -> None:
     item_id = event["itemId"]
     item_name = event.get("name", "Your item")
     provider = event.get("provider", "")
+    kind = event.get("type", "other")
     expiry_date = event.get("expiryDate", "")
     follow_up_count = int(event.get("followUpCount", 0))
 
@@ -31,33 +53,33 @@ def handler(event: dict[str, Any], _context: Any) -> None:
     api_base = os.environ["API_BASE_URL"].rstrip("/")
     renew_url = f"{api_base}/action?id={renew_id}"
     snooze_url = f"{api_base}/action?id={snooze_id}"
+    app_url = _app_url()
 
-    prefix = f"[Follow-up #{follow_up_count}] " if follow_up_count > 0 else ""
-    when = describe_expiry(expiry_date)  # "expires in 12 days (…)" / "expired on …"
-    subject = f"{prefix}Lapse reminder: {item_name} {when}"
+    subject, heading, preheader = _copy(item_name, expiry_date, follow_up_count)
 
-    safe_name = html.escape(item_name)
-    safe_provider = html.escape(provider)
-    safe_when = html.escape(when[:1].upper() + when[1:])
-    provider_line = f" ({safe_provider})" if safe_provider else ""
+    intro = (
+        "We haven't heard back about this one, so here's another nudge. "
+        if follow_up_count > 0 else ""
+    ) + "Renewed it already? Tell us and add the new date, and Lapse will remind you next time too."
 
-    html_body = f"""<!doctype html>
-<html>
-<body style="font-family:system-ui,-apple-system,sans-serif;max-width:540px;margin:24px auto;color:#1f2937;">
-  <h2 style="margin-bottom:8px;">{safe_name}{provider_line}</h2>
-  <p style="font-size:16px;"><strong>{safe_when}</strong>.</p>
-  <div style="margin:24px 0;">
-    <a href="{renew_url}" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600;margin-right:12px;">I renewed it</a>
-    <a href="{snooze_url}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600;">Remind me in 7 days</a>
-  </div>
-  <p style="font-size:12px;color:#6b7280;">Each link works once and opens a confirmation page before updating your reminder.</p>
-</body>
-</html>"""
+    content = f"""
+<div style="margin:22px 0 22px;">{email_item_card(item_name, provider, kind, expiry_date)}</div>
+<div>{email_button(renew_url, "I renewed it")}{email_button(snooze_url, "Remind me in 7 days", primary=False)}</div>
+<p style="margin:12px 0 0;font-size:13px;line-height:1.5;color:#8b9592;">Each button opens a confirmation page first. Nothing changes until you confirm.</p>"""
+
+    footer = (
+        f'You get this because you track <strong>{e(item_name)}</strong> on Lapse. '
+        f'<a href="{e(app_url, quote=True)}" style="color:#0f766e;">Open Lapse</a> to change the date or stop reminders.'
+    )
+    html_body = email_html(preheader=preheader, heading=heading, intro=e(intro), content=content, footer=footer)
 
     text_body = (
-        f"{item_name} {when}.\n\n"
+        f"{heading}.\n"
+        f"{item_name}{f' ({provider})' if provider else ''} {describe_expiry(expiry_date)}.\n\n"
         f"I renewed it: {renew_url}\n"
-        f"Remind me in 7 days: {snooze_url}\n"
+        f"Remind me in 7 days: {snooze_url}\n\n"
+        f"Each link opens a confirmation page first.\n"
+        f"Open Lapse: {app_url}\n"
     )
 
     get_ses_client().send_email(

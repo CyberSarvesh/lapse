@@ -258,6 +258,14 @@ Resources:
       Environment:
         Variables:
           API_BASE_URL: !Sub "https://${LapseApi}.execute-api.${AWS::Region}.amazonaws.com"
+          APP_URL: !If
+            - HasAppUrl
+            - !Ref AppUrl
+            - !If
+              - UseCdn
+              - !Sub "https://${WebDistribution.DomainName}"
+              # Empty: the handler uses the API's own HTTPS address, which serves the page.
+              - !If [IsLocal, !GetAtt WebBucket.WebsiteURL, ""]
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LapseTable
@@ -477,6 +485,16 @@ Resources:
     Properties:
       Handler: handlers.action_handler.handler
       CodeUri: src/
+      Environment:
+        Variables:
+          APP_URL: !If
+            - HasAppUrl
+            - !Ref AppUrl
+            - !If
+              - UseCdn
+              - !Sub "https://${WebDistribution.DomainName}"
+              # Empty: the handler uses the API's own HTTPS address, which serves the page.
+              - !If [IsLocal, !GetAtt WebBucket.WebsiteURL, ""]
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LapseTable

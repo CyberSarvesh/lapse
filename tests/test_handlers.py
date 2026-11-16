@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from handlers import action_handler, add_or_update_item, auth, compute_reminder, delete_item, extract_document, get_upload_url, list_items
+from handlers import action_handler, add_or_update_item, auth, compute_reminder, delete_item, extract_document, get_upload_url, list_items, send_reminder
 
 
 class ComputeReminderTests(unittest.TestCase):
@@ -443,6 +443,45 @@ class DocumentReaderTests(unittest.TestCase):
         self.assertFalse(res["found"])
         saved = mock_put.call_args[0][0]
         self.assertEqual((saved["status"], saved["suggestedDate"]), ("NEEDS_DATE", "2027-05-05"))
+
+
+class EmailAndPageDesignTests(unittest.TestCase):
+    def _reminder(self, days: int, follow_up: int = 0) -> dict:
+        from datetime import timedelta
+        from common.dates import today_utc
+        ses = MagicMock()
+        with (
+            patch.dict(os.environ, {"API_BASE_URL": "https://api.example", "APP_URL": "", "SENDER_EMAIL": "x@y"}),
+            patch("handlers.send_reminder.put_action_link"),
+            patch("handlers.send_reminder.get_ses_client", return_value=ses),
+        ):
+            send_reminder.handler({"taskToken": "t", "email": "a@b.com", "itemId": "i", "name": "Car <Insurance>",
+                                   "provider": "ACME", "type": "insurance", "followUpCount": follow_up,
+                                   "expiryDate": (today_utc() + timedelta(days=days)).isoformat()}, None)
+        return ses.send_email.call_args.kwargs["Message"]
+
+    def test_reminder_email_wording_and_escaping(self) -> None:
+        soon = self._reminder(12)
+        self.assertTrue(soon["Subject"]["Data"].startswith("Car <Insurance> expires in 12 days · "))
+        html_body = soon["Body"]["Html"]["Data"]
+        self.assertIn("Car &lt;Insurance&gt;", html_body)
+        self.assertNotIn("Car <Insurance>", html_body)
+        self.assertIn("https://api.example/", html_body)  # "Open Lapse" falls back to the API's address
+        self.assertIn("expired on", self._reminder(-3)["Subject"]["Data"])
+        self.assertTrue(self._reminder(5, follow_up=2)["Subject"]["Data"].startswith("Reminder 3: "))
+
+    def test_stop_button_renews_without_a_date_even_if_one_was_typed(self) -> None:
+        record = {"action": "RENEWED", "taskToken": "tok", "email": "a@b.com", "itemId": "i", "itemName": "Car"}
+        with (
+            patch("handlers.action_handler.consume_action_link", return_value=record),
+            patch("handlers.action_handler.get_item", return_value={"status": "ACTIVE"}),
+            patch("handlers.action_handler.get_sfn_client") as sfn,
+        ):
+            res = action_handler.handler(
+                {"requestContext": {"http": {"method": "POST"}}, "body": "id=x&mode=stop&newExpiryDate=2030-01-01"}, None
+            )
+        self.assertEqual(res["statusCode"], 200)
+        self.assertEqual(json.loads(sfn.return_value.send_task_success.call_args.kwargs["output"]), {"choice": "RENEWED"})
 
 
 class WebPageTests(unittest.TestCase):
