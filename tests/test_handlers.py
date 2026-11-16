@@ -484,6 +484,73 @@ class EmailAndPageDesignTests(unittest.TestCase):
         self.assertEqual(json.loads(sfn.return_value.send_task_success.call_args.kwargs["output"]), {"choice": "RENEWED"})
 
 
+class ReminderTimingTests(unittest.TestCase):
+    def test_lead_days_chooses_when_the_first_reminder_goes_out(self) -> None:
+        from datetime import datetime, timedelta, timezone
+        expiry = (datetime.now(timezone.utc) + timedelta(days=100)).strftime("%Y-%m-%d")
+        with patch.dict(os.environ, {"DEMO_MODE": "false", "LEAD_DAYS": "30"}):
+            week = compute_reminder.handler({"expiryDate": expiry, "mode": "initial", "leadDays": 7}, None)["waitSeconds"]
+            default = compute_reminder.handler({"expiryDate": expiry, "mode": "initial"}, None)["waitSeconds"]
+        self.assertAlmostEqual((week - default) / 86400, 23, delta=0.01)
+
+    def test_only_offered_lead_times_are_accepted(self) -> None:
+        from common.dates import lead_days
+        with patch.dict(os.environ, {"LEAD_DAYS": "30"}):
+            self.assertEqual([lead_days(v) for v in (7, "90", 5, None, "x")], [7, 90, 30, 30, 30])
+
+    def test_workflow_keeps_lead_days_and_type(self) -> None:
+        sm = json.loads((Path(__file__).resolve().parents[1] / "statemachine" / "lapse.asl.json").read_text())["States"]
+        self.assertEqual(sm["ComputeReminder"]["Parameters"]["leadDays.$"], "$.doc.leadDays")
+        self.assertIn("leadDays", sm["SaveActiveItem"]["Parameters"]["UpdateExpression"])
+        self.assertEqual(sm["IncrementFollowUp"]["Parameters"]["leadDays.$"], "$.doc.leadDays")
+        for st in ("ContinueAsNew", "RestartWithNewDate"):
+            self.assertEqual(sm[st]["Parameters"]["Input"]["leadDays.$"], "$.doc.leadDays")
+        self.assertEqual(sm["SendReminderAndWait"]["Parameters"]["Payload"]["type.$"], "$.doc.type")
+
+
+class CalendarFeedTests(unittest.TestCase):
+    def test_feed_lists_active_items_with_alarms(self) -> None:
+        from handlers.calendar_feed import build_calendar
+        ics = build_calendar([
+            {"itemId": "a", "name": "Car, Insurance", "type": "insurance", "provider": "ACME", "expiryDate": "2027-01-21", "status": "ACTIVE", "leadDays": 7},
+            {"itemId": "b", "name": "Old", "expiryDate": "2027-02-01", "status": "RENEWED"},
+            {"itemId": "c", "name": "No date", "expiryDate": "", "status": "NEEDS_DATE"},
+        ], "https://app.example/")
+        self.assertEqual(ics.count("BEGIN:VEVENT"), 1)
+        self.assertIn("DTSTART;VALUE=DATE:20270121", ics)
+        self.assertIn("SUMMARY:Car\\, Insurance expires", ics)
+        self.assertIn("TRIGGER:-P7D", ics)
+        self.assertIn("TRIGGER:-P1D", ics)
+        self.assertTrue(all(len(line.encode()) <= 75 for line in ics.split("\r\n")))
+
+    def test_link_is_created_once_and_feed_needs_the_secret(self) -> None:
+        from handlers import calendar_feed
+        store: dict = {}
+        table = MagicMock()
+        table.get_item.side_effect = lambda Key: {"Item": store[(Key["PK"], Key["SK"])]} if (Key["PK"], Key["SK"]) in store else {}
+        table.put_item.side_effect = lambda Item: store.__setitem__((Item["PK"], Item["SK"]), Item)
+        table.delete_item.side_effect = lambda Key: store.pop((Key["PK"], Key["SK"]), None)
+        ctx = {"domainName": "abc.execute-api.us-east-1.amazonaws.com", "http": {"method": "POST"}}
+        with (
+            patch("handlers.calendar_feed.get_dynamodb_table", return_value=table),
+            patch("handlers.calendar_feed.authenticated_email", return_value="a@b.com"),
+            patch("handlers.calendar_feed.list_user_items", return_value=[]),
+        ):
+            first = json.loads(calendar_feed.handler({"requestContext": ctx, "body": "{}"}, None)["body"])["url"]
+            again = json.loads(calendar_feed.handler({"requestContext": ctx, "body": "{}"}, None)["body"])["url"]
+            rotated = json.loads(calendar_feed.handler({"requestContext": ctx, "body": '{"rotate": true}'}, None)["body"])["url"]
+            get_ctx = {**ctx, "http": {"method": "GET"}}
+            get = lambda url: calendar_feed.handler({"requestContext": get_ctx, "pathParameters": {"token": url.rsplit("/", 1)[1]}}, None)  # noqa: E731
+            self.assertEqual(get(rotated)["statusCode"], 200)
+            self.assertEqual(get(first)["statusCode"], 404)  # rotated away
+            self.assertEqual(calendar_feed.handler({"requestContext": get_ctx, "pathParameters": {"token": "guess"}}, None)["statusCode"], 404)
+        self.assertEqual(first, again)
+        self.assertTrue(first.startswith("https://abc.execute-api.us-east-1.amazonaws.com/calendar/") and first.endswith(".ics"))
+        self.assertNotEqual(first, rotated)
+        # Only a hash of the token is used as the lookup key.
+        self.assertFalse(any(rotated.rsplit("/", 1)[1].removesuffix(".ics") in pk for pk, _ in store))
+
+
 class WebPageTests(unittest.TestCase):
     def test_serves_page_from_private_bucket_with_security_headers(self) -> None:
         from handlers import web_page

@@ -112,6 +112,11 @@ Each entry records what was decided, the alternatives, and why. Use this when an
 - **Alternatives:** The S3 website endpoint (HTTP only, browsers mark it "Not secure"); CloudFront by default (refused on new accounts until AWS Support verifies them); Amplify Hosting (another service and build step).
 - **Why:** Sign-in links carry a token, so the page must not travel in clear text, and a public bucket was the last public-by-policy resource. Serving from the API needs no extra service or verification, costs a Lambda call per page load, and still allows CloudFront and a custom domain later.
 
+## D30. Per-item reminder timing and a private calendar feed
+- **Decision:** Each item stores `leadDays` (1, 7, 14, 30, 60 or 90; default `LeadDays`), which the workflow carries in `$.doc` through saves, follow-ups, continue-as-new and restarts, and `ComputeReminder` uses for the first wait. `POST /calendar-feed` gives a signed-in user a private `https://…/calendar/<token>.ics` link (only its SHA-256 is used for lookup; `{"rotate": true}` replaces it); `GET /calendar/{token}` returns an iCalendar feed of active items with alarms at the lead time and the day before.
+- **Alternatives:** Several reminders per item (more workflow state for little gain over follow-ups); per-item .ics downloads only (go stale when dates change); Google Calendar API sync (OAuth and one provider only).
+- **Why:** Different things need different notice (a passport months ahead, a subscription days ahead). A subscribed feed keeps every calendar app current with no account linking, and it is a second channel when email lands in Spam. Calendar apps can't send a sign-in header, so the unguessable, revocable URL is the credential.
+
 ## D25. Region choice
 - **Decision:** A region where both Bedrock (with a vision model) and SES are available; us-east-1 by default.
 - **Why:** Avoids last-minute surprises with model availability.

@@ -30,7 +30,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     to a fresh execution after waking up.
     """
     demo_mode = os.environ.get("DEMO_MODE", "false").lower() == "true"
-    lead_days = int(os.environ.get("LEAD_DAYS", "30"))
+    lead_days = int(event.get("leadDays") or os.environ.get("LEAD_DAYS", "30"))
     mode = event.get("mode", "initial")
 
     if demo_mode:

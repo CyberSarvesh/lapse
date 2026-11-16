@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timedelta, timezone
 
 # A user far behind UTC can still be on "yesterday" by the server's clock, so a
 # date one day before today (UTC) is accepted as today.
 PAST_GRACE_DAYS = 1
+
+# How long before the expiry date the first reminder goes out.
+LEAD_DAY_CHOICES = (1, 7, 14, 30, 60, 90)
+
+
+def default_lead_days() -> int:
+    return int(os.environ.get("LEAD_DAYS", "30"))
+
+
+def lead_days(value: object) -> int:
+    """A valid reminder lead time from user input, else the default."""
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default_lead_days()
+    return n if n in LEAD_DAY_CHOICES else default_lead_days()
 
 
 def today_utc() -> date:

@@ -409,6 +409,38 @@ Resources:
             Path: /
             Method: GET
 
+  CalendarFeedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.calendar_feed.handler
+      CodeUri: src/
+      Environment:
+        Variables:
+          APP_URL: !If
+            - HasAppUrl
+            - !Ref AppUrl
+            - !If
+              - UseCdn
+              - !Sub "https://${WebDistribution.DomainName}"
+              # Empty: the handler uses the API's own HTTPS address, which serves the page.
+              - !If [IsLocal, !GetAtt WebBucket.WebsiteURL, ""]
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+      Events:
+        CreateFeedLink:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /calendar-feed
+            Method: POST
+        ServeFeed:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /calendar/{token}
+            Method: GET
+
   GetUploadUrlFunction:
     Type: AWS::Serverless::Function
     Properties:

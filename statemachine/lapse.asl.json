@@ -1,5 +1,5 @@
 {
-  "Comment": "Lapse — Step Functions Standard scheduler and human-in-the-loop reminder workflow",
+  "Comment": "Lapse \u2014 Step Functions Standard scheduler and human-in-the-loop reminder workflow",
   "StartAt": "ExtractDetails",
   "States": {
     "ExtractDetails": {
@@ -8,7 +8,12 @@
       "ResultPath": "$.doc",
       "Retry": [
         {
-          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
           "IntervalSeconds": 2,
           "MaxAttempts": 2,
           "BackoffRate": 2.0
@@ -36,27 +41,56 @@
       "Parameters": {
         "TableName": "${TableName}",
         "Key": {
-          "PK": { "S.$": "States.Format('USER#{}', $.doc.email)" },
-          "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
+          "PK": {
+            "S.$": "States.Format('USER#{}', $.doc.email)"
+          },
+          "SK": {
+            "S.$": "States.Format('ITEM#{}', $.doc.itemId)"
+          }
         },
-        "UpdateExpression": "SET itemId = :id, email = :em, #n = :nm, #t = :tp, provider = :pr, expiryDate = :ex, s3Key = :sk, #st = :st, executionArn = :ea, followUpCount = :fc, updatedAt = :ua, createdAt = if_not_exists(createdAt, :ua)",
+        "UpdateExpression": "SET itemId = :id, email = :em, #n = :nm, #t = :tp, provider = :pr, expiryDate = :ex, s3Key = :sk, #st = :st, executionArn = :ea, followUpCount = :fc, leadDays = :ld, updatedAt = :ua, createdAt = if_not_exists(createdAt, :ua)",
         "ExpressionAttributeNames": {
           "#n": "name",
           "#t": "type",
           "#st": "status"
         },
         "ExpressionAttributeValues": {
-          ":id": { "S.$": "$.doc.itemId" },
-          ":em": { "S.$": "$.doc.email" },
-          ":nm": { "S.$": "$.doc.name" },
-          ":tp": { "S.$": "$.doc.type" },
-          ":pr": { "S.$": "$.doc.provider" },
-          ":ex": { "S.$": "$.doc.expiryDate" },
-          ":sk": { "S.$": "$.doc.s3Key" },
-          ":st": { "S": "ACTIVE" },
-          ":ea": { "S.$": "$$.Execution.Id" },
-          ":fc": { "N.$": "States.Format('{}', $.doc.followUpCount)" },
-          ":ua": { "S.$": "$$.State.EnteredTime" }
+          ":id": {
+            "S.$": "$.doc.itemId"
+          },
+          ":em": {
+            "S.$": "$.doc.email"
+          },
+          ":nm": {
+            "S.$": "$.doc.name"
+          },
+          ":tp": {
+            "S.$": "$.doc.type"
+          },
+          ":pr": {
+            "S.$": "$.doc.provider"
+          },
+          ":ex": {
+            "S.$": "$.doc.expiryDate"
+          },
+          ":sk": {
+            "S.$": "$.doc.s3Key"
+          },
+          ":st": {
+            "S": "ACTIVE"
+          },
+          ":ea": {
+            "S.$": "$$.Execution.Id"
+          },
+          ":fc": {
+            "N.$": "States.Format('{}', $.doc.followUpCount)"
+          },
+          ":ua": {
+            "S.$": "$$.State.EnteredTime"
+          },
+          ":ld": {
+            "N.$": "States.Format('{}', $.doc.leadDays)"
+          }
         }
       },
       "ResultPath": null,
@@ -83,7 +117,8 @@
       "Parameters": {
         "expiryDate.$": "$.doc.expiryDate",
         "mode.$": "$.mode",
-        "executionStartTime.$": "$$.Execution.StartTime"
+        "executionStartTime.$": "$$.Execution.StartTime",
+        "leadDays.$": "$.doc.leadDays"
       },
       "ResultPath": "$.schedule",
       "Next": "WaitUntilReminder"
@@ -99,8 +134,12 @@
       "Parameters": {
         "TableName": "${TableName}",
         "Key": {
-          "PK": { "S.$": "States.Format('USER#{}', $.doc.email)" },
-          "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
+          "PK": {
+            "S.$": "States.Format('USER#{}', $.doc.email)"
+          },
+          "SK": {
+            "S.$": "States.Format('ITEM#{}', $.doc.itemId)"
+          }
         }
       },
       "ResultPath": "$.currentItem",
@@ -159,7 +198,8 @@
           "expiryDate.$": "$.doc.expiryDate",
           "s3Key.$": "$.doc.s3Key",
           "followUpCount.$": "$.doc.followUpCount",
-          "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+          "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id",
+          "leadDays.$": "$.doc.leadDays"
         }
       },
       "End": true
@@ -177,14 +217,17 @@
           "name.$": "$.doc.name",
           "provider.$": "$.doc.provider",
           "expiryDate.$": "$.doc.expiryDate",
-          "followUpCount.$": "$.doc.followUpCount"
+          "followUpCount.$": "$.doc.followUpCount",
+          "type.$": "$.doc.type"
         }
       },
       "ResultPath": "$.userResponse",
       "Retry": [
         {
           "Comment": "SES throttling or transient Lambda errors; States.TaskFailed never matches States.Timeout.",
-          "ErrorEquals": ["States.TaskFailed"],
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
           "IntervalSeconds": 5,
           "MaxAttempts": 3,
           "BackoffRate": 2.0
@@ -192,13 +235,17 @@
       ],
       "Catch": [
         {
-          "ErrorEquals": ["States.Timeout"],
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
           "ResultPath": "$.timeoutError",
           "Next": "IncrementFollowUp"
         },
         {
           "Comment": "Reminder could not be sent even after retries: count it as a missed reminder so the item still ends (IGNORED) instead of failing the execution.",
-          "ErrorEquals": ["States.ALL"],
+          "ErrorEquals": [
+            "States.ALL"
+          ],
           "ResultPath": "$.reminderError",
           "Next": "IncrementFollowUp"
         }
@@ -216,7 +263,8 @@
         "provider.$": "$.doc.provider",
         "expiryDate.$": "$.doc.expiryDate",
         "s3Key.$": "$.doc.s3Key",
-        "followUpCount.$": "States.MathAdd($.doc.followUpCount, 1)"
+        "followUpCount.$": "States.MathAdd($.doc.followUpCount, 1)",
+        "leadDays.$": "$.doc.leadDays"
       },
       "ResultPath": "$.doc",
       "Next": "CheckFollowUpLimit"
@@ -244,8 +292,12 @@
       "Parameters": {
         "TableName": "${TableName}",
         "Key": {
-          "PK": { "S.$": "States.Format('USER#{}', $.doc.email)" },
-          "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
+          "PK": {
+            "S.$": "States.Format('USER#{}', $.doc.email)"
+          },
+          "SK": {
+            "S.$": "States.Format('ITEM#{}', $.doc.itemId)"
+          }
         },
         "UpdateExpression": "SET #st = :st, followUpCount = :fc, updatedAt = :ua",
         "ConditionExpression": "#st = :active AND executionArn = :me",
@@ -253,17 +305,29 @@
           "#st": "status"
         },
         "ExpressionAttributeValues": {
-          ":st": { "S": "IGNORED" },
-          ":fc": { "N.$": "States.Format('{}', $.doc.followUpCount)" },
-          ":ua": { "S.$": "$$.State.EnteredTime" },
-          ":active": { "S": "ACTIVE" },
-          ":me": { "S.$": "$$.Execution.Id" }
+          ":st": {
+            "S": "IGNORED"
+          },
+          ":fc": {
+            "N.$": "States.Format('{}', $.doc.followUpCount)"
+          },
+          ":ua": {
+            "S.$": "$$.State.EnteredTime"
+          },
+          ":active": {
+            "S": "ACTIVE"
+          },
+          ":me": {
+            "S.$": "$$.Execution.Id"
+          }
         }
       },
       "Catch": [
         {
           "Comment": "Item was stopped or taken over by a newer execution; leave it alone.",
-          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "ErrorEquals": [
+            "DynamoDB.ConditionalCheckFailedException"
+          ],
           "ResultPath": null,
           "Next": "EndStopped"
         }
@@ -307,7 +371,8 @@
           "expiryDate.$": "$.userResponse.newExpiryDate",
           "s3Key.$": "$.doc.s3Key",
           "followUpCount": 0,
-          "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+          "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id",
+          "leadDays.$": "$.doc.leadDays"
         }
       },
       "End": true
@@ -324,8 +389,12 @@
       "Parameters": {
         "TableName": "${TableName}",
         "Key": {
-          "PK": { "S.$": "States.Format('USER#{}', $.doc.email)" },
-          "SK": { "S.$": "States.Format('ITEM#{}', $.doc.itemId)" }
+          "PK": {
+            "S.$": "States.Format('USER#{}', $.doc.email)"
+          },
+          "SK": {
+            "S.$": "States.Format('ITEM#{}', $.doc.itemId)"
+          }
         },
         "UpdateExpression": "SET #st = :st, updatedAt = :ua",
         "ConditionExpression": "#st = :active AND executionArn = :me",
@@ -333,16 +402,26 @@
           "#st": "status"
         },
         "ExpressionAttributeValues": {
-          ":st": { "S": "RENEWED" },
-          ":ua": { "S.$": "$$.State.EnteredTime" },
-          ":active": { "S": "ACTIVE" },
-          ":me": { "S.$": "$$.Execution.Id" }
+          ":st": {
+            "S": "RENEWED"
+          },
+          ":ua": {
+            "S.$": "$$.State.EnteredTime"
+          },
+          ":active": {
+            "S": "ACTIVE"
+          },
+          ":me": {
+            "S.$": "$$.Execution.Id"
+          }
         }
       },
       "Catch": [
         {
           "Comment": "Item was stopped or taken over by a newer execution; leave it alone.",
-          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "ErrorEquals": [
+            "DynamoDB.ConditionalCheckFailedException"
+          ],
           "ResultPath": null,
           "Next": "EndStopped"
         }

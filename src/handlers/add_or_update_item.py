@@ -17,7 +17,7 @@ from common.db import (
     user_pk,
     utc_now_iso,
 )
-from common.dates import check_future_expiry
+from common.dates import check_future_expiry, lead_days
 from common.http import json_response, parse_json_body
 
 
@@ -48,6 +48,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "s3Key": existing.get("s3Key", ""),
         "status": STATUS_ACTIVE,
         "followUpCount": 0,
+        "leadDays": lead_days(body.get("leadDays", existing.get("leadDays"))),
         "createdAt": existing.get("createdAt") or now,
         "updatedAt": now,
     }
@@ -62,6 +63,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "expiryDate": item["expiryDate"],
         "s3Key": item["s3Key"],
         "followUpCount": 0,
+        "leadDays": item["leadDays"],
     }
     exec_resp = get_sfn_client().start_execution(
         stateMachineArn=os.environ["STATE_MACHINE_ARN"],

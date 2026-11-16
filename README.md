@@ -12,6 +12,7 @@ Built for the **AWS Weekend Challenge: "No Pipeline, No Problem"**.
 - **AI Extraction:** Amazon Bedrock vision model when the account has model access, otherwise Amazon Textract OCR with a scored date finder ([src/common/doc_reader.py](src/common/doc_reader.py)). Unlabelled dates are offered for confirmation; unreadable documents fall back to `NEEDS_DATE`
 - **Scheduler & Human Loop:** AWS Step Functions Standard workflow ([statemachine/lapse.asl.json](statemachine/lapse.asl.json)) using `Wait` states, 300-day continue-as-new splitting, and `waitForTaskToken`
 - **Reminders:** Amazon SES emails with one-time action links and a confirm-before-acting page (`GET /action` → `POST /action`)
+- **Reminder timing & calendar:** each item chooses when the first reminder goes out (1 day to 3 months before), and a private, revocable iCalendar feed (`/calendar/<token>.ics`) puts every expiry date into Google, Apple or Outlook Calendar
 
 ## Local Development (LocalStack)
 

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from common.aws_clients import get_bedrock_client, get_s3_client, get_textract_client
-from common.dates import is_past, parse_expiry, today_utc
+from common.dates import default_lead_days, is_past, lead_days, parse_expiry, today_utc
 from common.doc_reader import read_document
 from common.db import (
     STATUS_NEEDS_DATE,
@@ -192,6 +192,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             "expiryDate": event["expiryDate"],
             "s3Key": event.get("s3Key", ""),
             "followUpCount": int(event.get("followUpCount", 0)),
+            "leadDays": lead_days(event.get("leadDays")),
         }
 
     bucket, s3_key = _parse_s3_event(event)
@@ -276,4 +277,5 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "expiryDate": extracted["expiryDate"],
         "s3Key": "",
         "followUpCount": 0,
+        "leadDays": default_lead_days(),
     }
