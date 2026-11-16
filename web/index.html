@@ -735,6 +735,8 @@
     const MS_DAY = 86400000;
     function parseDate(s) { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); }
     function todayUtc() { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()); }
+    // Local calendar date, so "today" matches what the person sees on their clock.
+    function todayIso() { const n = new Date(); return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())).toISOString().slice(0, 10); }
     function daysLeft(expiry) { return expiry ? Math.round((parseDate(expiry) - todayUtc()) / MS_DAY) : null; }
     const fmtDate = (s) => new Date(parseDate(s)).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     function isoPlusMonths(months) {
@@ -862,24 +864,31 @@
       const sub = [
         item.provider ? esc(item.provider) : "",
         t.label === "ID" ? "Passport / ID" : t.label,
-        item.expiryDate ? `Expires ${fmtDate(item.expiryDate)}` : "",
+        item.expiryDate ? `${c.d < 0 ? "Expired" : "Expires"} ${fmtDate(item.expiryDate)}` : "",
       ].filter(Boolean).join('<span class="sep">·</span>');
 
       let right = c.pill || "";
       if (c.d !== undefined) {
         const bc = bigCount(c.d);
-        const label = c.d < 0 ? "overdue" : c.d === 0 ? "" : "left";
-        right = c.d === 0
-          ? `<div class="countdown"><b>Today</b><small>expires</small></div>`
-          : `<div class="countdown"><b class="tabular">${bc.n}</b><small>${bc.u} ${label}</small></div>`;
+        if (c.d < 0) right = `<div class="countdown"><b>Expired</b><small>${humanDays(c.d)}</small></div>`;
+        else if (c.d === 0) right = `<div class="countdown"><b>Today</b><small>expires</small></div>`;
+        else right = `<div class="countdown"><b class="tabular">${bc.n}</b><small>${bc.u} left</small></div>`;
       }
 
-      const needsDate = item.status === "NEEDS_DATE" ? `
+      const dateForm = (prompt, button) => `
         <form class="item-extra" onsubmit="submitManualDate(event, ${idx})">
-          <span class="muted" style="font-size:13px">We couldn't read the date. When does it expire?</span>
-          <input class="input" type="date" required aria-label="Expiry date for ${esc(item.name)}">
-          <button class="btn sm" type="submit">Save date</button>
-        </form>` : "";
+          <span class="muted" style="font-size:13px">${prompt}</span>
+          <input class="input" type="date" required min="${todayIso()}" aria-label="New expiry date for ${esc(item.name)}">
+          <button class="btn sm" type="submit">${button}</button>
+        </form>`;
+      let needsDate = "";
+      if (item.status === "NEEDS_DATE") {
+        needsDate = item.expiredOn
+          ? dateForm(`This document expired on ${fmtDate(item.expiredOn)}. Renewed it? Enter the new expiry date.`, "Save date")
+          : dateForm("We couldn't read the date. When does it expire?", "Save date");
+      } else if (item.status === "ACTIVE" && c.d !== undefined && c.d < 0) {
+        needsDate = dateForm("Renewed it? Enter the new expiry date to keep getting reminders.", "Update");
+      }
 
       const canEdit = item.status !== "PROCESSING";
       const cal = item.expiryDate ? `
@@ -1022,11 +1031,11 @@
       if (item) {
         $("fName").value = item.name === "Uploaded Document" ? "" : item.name;
         $("fProvider").value = item.provider || "";
-        $("fExpiry").value = item.status === "ACTIVE" ? item.expiryDate || "" : "";
+        $("fExpiry").value = item.status === "ACTIVE" && item.expiryDate >= todayIso() ? item.expiryDate : "";
         const r = document.querySelector(`input[name="fType"][value="${typeInfo(item.type).v}"]`);
         if (r) r.checked = true;
       }
-      $("fExpiry").min = new Date().toISOString().slice(0, 10);
+      $("fExpiry").min = todayIso();
       itemDialog.showModal();
       setTimeout(() => $(item ? "fExpiry" : "fName").focus(), 30);
     }
@@ -1067,6 +1076,7 @@
       const item = currentItems[idx];
       const expiryDate = ev.target.querySelector('input[type="date"]').value;
       if (!expiryDate) return;
+      if (expiryDate < todayIso()) { toast("That date has already passed. Enter the date the new one expires.", "error"); return; }
       const btn = ev.target.querySelector("button");
       btn.disabled = true;
       try {
@@ -1074,7 +1084,7 @@
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ itemId: item.itemId, name: item.name, type: item.type, provider: item.provider, expiryDate }),
         });
-        if (!res.ok) throw new Error("Couldn't save the date");
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't save the date");
         toast("Date saved · reminder scheduled");
       } catch (err) { toast(err.message, "error"); }
       await loadItems();
