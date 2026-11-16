@@ -74,6 +74,8 @@ Then sign in and press **Turn on** under "This device". On iPhone, add Lapse to 
 
 ## Privacy and sign-in
 
+- **Try the demo:** the sign-in card has a **Try the demo, no email needed** button. It opens a private sample account (8 items in every state) that deletes itself after 24 hours. Reminders in the demo arrive as browser push notifications.
+
 - **Sign-in:** enter your email and Lapse sends a one-time link (valid 15 minutes). There's no password. The API only ever serves the signed-in user's items, so knowing someone's email address isn't enough to see them. In LocalMode (LocalStack doesn't deliver email) the page shows the link directly.
 - **Documents:** the uploaded photo or PDF is deleted as soon as the date is read; only the name, provider and date are kept. A 1-day lifecycle rule removes anything left behind.
 - **HTTPS:** the page is served only over HTTPS, with HSTS, `nosniff`, frame-blocking and a strict referrer policy, so the sign-in token in the link never travels in clear text. To use your own domain, add it to the distribution with an ACM certificate and deploy with `AppUrl=https://your.domain`.

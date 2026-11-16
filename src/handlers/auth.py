@@ -1,4 +1,4 @@
-"""POST /auth/start, /auth/verify, /auth/logout — passwordless email sign-in (D26)."""
+"""POST /auth/start, /auth/verify, /auth/demo, /auth/logout — passwordless email sign-in (D26) and demo accounts (D32)."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from common.auth import (
 )
 from common.aws_clients import get_ses_client
 from common.brand import e, email_button, email_html
+from common.demo import DEMO_TTL_SECONDS, allow_demo, create_demo_account, is_demo
 from common.http import json_response, parse_json_body
 
 logger = logging.getLogger()
@@ -84,6 +85,8 @@ def _start(event: dict[str, Any]) -> dict[str, Any]:
     body: dict[str, Any] = {"sent": True}
     # Same answer whether or not we actually sent, so the endpoint can't be used
     # to probe who uses Lapse or to flood someone's inbox.
+    if is_demo(email):
+        return json_response(200, body)
     if allow_login_email(email):
         url = _sign_in_url(event, create_login_token(email))
         _send_sign_in_email(email, url)
@@ -102,12 +105,20 @@ def _verify(event: dict[str, Any]) -> dict[str, Any]:
     return json_response(200, {"token": create_session(email), "email": email})
 
 
+def _demo(_event: dict[str, Any]) -> dict[str, Any]:
+    """A throwaway account with sample items and a 24-hour session; no email involved (D32)."""
+    if not allow_demo():
+        return json_response(429, {"error": "Lots of people are trying the demo right now. Try again in a minute."})
+    email = create_demo_account()
+    return json_response(200, {"token": create_session(email, DEMO_TTL_SECONDS), "email": email, "demo": True})
+
+
 def _logout(event: dict[str, Any]) -> dict[str, Any]:
     delete_session(bearer_token(event))
     return json_response(200, {"signedOut": True})
 
 
-ROUTES = {"/auth/start": _start, "/auth/verify": _verify, "/auth/logout": _logout}
+ROUTES = {"/auth/start": _start, "/auth/verify": _verify, "/auth/demo": _demo, "/auth/logout": _logout}
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:

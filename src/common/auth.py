@@ -90,7 +90,7 @@ def consume_login_token(token: str) -> str | None:
 
 # --- Sessions ---------------------------------------------------------------
 
-def create_session(email: str) -> str:
+def create_session(email: str, ttl_seconds: int = SESSION_TTL_SECONDS) -> str:
     token = secrets.token_urlsafe(32)
     get_dynamodb_table().put_item(
         Item={
@@ -98,7 +98,7 @@ def create_session(email: str) -> str:
             "SK": "META",
             "email": email,
             "createdAt": int(time.time()),
-            "ttl": int(time.time()) + SESSION_TTL_SECONDS,
+            "ttl": int(time.time()) + ttl_seconds,
         }
     )
     return token

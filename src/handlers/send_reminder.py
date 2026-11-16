@@ -12,6 +12,7 @@ from common.aws_clients import get_ses_client
 from common.brand import countdown, e, email_button, email_html, email_item_card, nice_date
 from common.dates import days_until, describe_expiry
 from common.db import put_action_link
+from common.demo import is_demo
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -91,7 +92,10 @@ def handler(event: dict[str, Any], _context: Any) -> None:
     # refusing an unverified address) must not stop the other. Only when
     # nothing got out does the step fail, so the workflow retries.
     email_error: Exception | None = None
+    demo = is_demo(email)  # a demo address can never receive mail (D32)
     try:
+        if demo:
+            raise RuntimeError("demo account: email skipped")
         get_ses_client().send_email(
             Source=os.environ["SENDER_EMAIL"],
             Destination={"ToAddresses": [email]},
@@ -105,7 +109,8 @@ def handler(event: dict[str, Any], _context: Any) -> None:
         )
     except Exception as err:  # noqa: BLE001 - reported below if push also fails
         email_error = err
-        logger.warning("Reminder email to %s failed: %s", item_id, err)
+        if not demo:
+            logger.warning("Reminder email to %s failed: %s", item_id, err)
 
     pushed = 0
     try:
@@ -122,6 +127,6 @@ def handler(event: dict[str, Any], _context: Any) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("Reminder push for %s failed", item_id)
 
-    logger.info("Reminder %s: email %s, push to %d device(s)", item_id, "failed" if email_error else "sent", pushed)
-    if email_error and not pushed:
-        raise email_error
+    logger.info("Reminder %s: email %s, push to %d device(s)", item_id, "skipped (demo)" if demo else "failed" if email_error else "sent", pushed)
+    if email_error and not pushed and not demo:
+        raise email_error  # nothing got out: let the workflow retry

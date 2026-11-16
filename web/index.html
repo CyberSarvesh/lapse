@@ -178,6 +178,13 @@
     .signin-card h2 { font-size: 22px; letter-spacing: -0.02em; }
     .signin-card .sub { color: var(--muted); margin: 6px 0 22px; font-size: 14px; }
     .signin-card .btn { margin-top: 14px; }
+    .or-line { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12.5px; margin: 18px 0 0; }
+    .or-line::before, .or-line::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+    .signin-card #demoBtn { margin-top: 14px; }
+    .demo-note { font-size: 12.5px; color: var(--faint); text-align: center; margin-top: 8px; }
+    .demo-banner { display: flex; gap: 10px; align-items: flex-start; margin-top: 18px; padding: 12px 14px; border-radius: 12px;
+      background: var(--accent-soft); color: var(--text); font-size: 13.5px; border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
+    .demo-banner svg { color: var(--accent); margin-top: 2px; }
     .fineprint { font-size: 12.5px; color: var(--faint); margin-top: 16px; display: flex; gap: 8px; align-items: flex-start; }
     .fineprint svg { width: 15px; height: 15px; margin-top: 2px; }
     .sent-state { text-align: center; padding: 8px 0 4px; }
@@ -524,6 +531,11 @@
               </button>
             </form>
             <div id="signInMsg" role="status"></div>
+            <div class="or-line">or</div>
+            <button class="btn ghost lg block" id="demoBtn" type="button">
+              <svg class="i"><use href="#i-sparkle"/></svg><span>Try the demo, no email needed</span>
+            </button>
+            <p class="demo-note">A private sample account with 8 items. It's deleted after 24 hours.</p>
           </div>
           <div id="sentState" class="sent-state" hidden>
             <div class="sent-icon"><svg class="i"><use href="#i-mail"/></svg></div>
@@ -568,6 +580,10 @@
 
     <!-- ================= Signed-in dashboard ================= -->
     <section id="dashboard" class="wrap" hidden>
+      <div class="demo-banner" id="demoBanner" hidden>
+        <svg class="i"><use href="#i-sparkle"/></svg>
+        <span><strong>Demo account.</strong> Sample data, deleted after 24 hours. Turn on notifications below, then add an item: in this demo the first reminder arrives about 90 seconds later.</span>
+      </div>
       <div class="dash-head">
         <div>
           <h1 id="greeting">Your renewals</h1>
@@ -644,7 +660,7 @@
               <div class="ch-title">Email</div>
               <div class="ch-sub" id="chEmail">Reminders with one-tap Renewed / Snooze.</div>
             </div>
-            <span class="pill tone-ok">On</span>
+            <span class="pill tone-ok" id="chEmailPill">On</span>
           </div>
           <div class="card channel">
             <div class="ch-ico tone-accent"><svg class="i"><use href="#i-bell"/></svg></div>
@@ -870,10 +886,18 @@
         $("accountEmail").textContent = s.email;
         $("avatar").textContent = (s.email[0] || "?").toUpperCase();
         $("greeting").textContent = greeting();
-        $("chEmail").textContent = `To ${s.email}. If the first one lands in Spam, mark it "Not spam".`;
+        const demo = isDemoEmail(s.email);
+        $("demoBanner").hidden = !demo;
+        $("accountEmail").textContent = demo ? "Demo account" : s.email;
+        $("chEmail").textContent = demo
+          ? "Off in the demo (the sample address can't receive mail). Use this device instead."
+          : `To ${s.email}. If the first one lands in Spam, mark it "Not spam".`;
+        $("chEmailPill").textContent = demo ? "Off" : "On";
+        $("chEmailPill").className = `pill ${demo ? "tone-gray" : "tone-ok"}`;
       } else {
         resetItems();
-        $("emailInput").value = store.get("lapse_email") || "";
+        const saved = store.get("lapse_email") || "";
+        $("emailInput").value = isDemoEmail(saved) ? "" : saved;
       }
     }
 
@@ -954,6 +978,34 @@
       }
     });
     $("useOtherBtn").addEventListener("click", () => { showSignInForm(); $("emailInput").focus(); });
+
+    // ---------- demo account (D32): a throwaway, email-free account with sample items ----------
+    function isDemoEmail(email) { return /@demo\.lapse\.invalid$/i.test(email || ""); }
+    $("demoBtn").addEventListener("click", async () => {
+      if (!getApiUrl()) { notice(NEED_API, "error"); return; }
+      const btn = $("demoBtn");
+      const label = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span><span>Setting up your demo…</span>`;
+      notice("");
+      try {
+        const { res, data } = await postJson("/auth/demo", {});
+        if (!res.ok) throw new Error(data.error || "Couldn't start the demo. Try again in a minute.");
+        store.set("lapse_session", data.token);
+        store.set("lapse_email", data.email);
+        renderAuth();
+        await loadItems();
+        renderPush();
+        refreshCalendarTile();
+        scrollTo({ top: 0 });
+        toast("Welcome to the demo");
+      } catch (err) {
+        notice(err instanceof TypeError ? "Network error. Check your connection." : err.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = label;
+      }
+    });
 
     $("signOutBtn").addEventListener("click", async () => {
       // A shared device shouldn't keep getting this person's reminders.

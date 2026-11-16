@@ -122,6 +122,11 @@ Each entry records what was decided, the alternatives, and why. Use this when an
 - **Alternatives:** A verified domain for email (costs money, and SES sandbox still limits recipients); SMS via SNS (per-message cost, sandbox); a push SaaS (another account, sends user data to a third party); the `pywebpush` library (pulls in `requests`, `py-vapid`, more layer weight).
 - **Why:** Email from an unverified sender lands in Spam, and in the SES sandbox it can't reach unverified addresses at all. Push needs no domain, never lands in Spam, costs nothing, and works for any user who taps "Allow". Encryption was checked against the reference `http_ece` decoder, and Google's push service accepted messages from the deployed Lambda (201).
 
+## D32. "Try the demo": throwaway accounts that need no email
+- **Decision:** `POST /auth/demo` creates a private account at `guest-<random>@demo.lapse.invalid` (the `.invalid` TLD can never receive mail), a 24-hour session, and 8 sample items covering every state (due soon, months away, expired, needs a date with a suggestion, renewed). Every record the account creates (items, push subscriptions, calendar links) carries a 24-hour DynamoDB `ttl`, so it all disappears on its own. A global cap (20 new demos a minute, an atomic counter) and API throttling stop abuse. Reminders for demo accounts skip email and go by push only, and "no device turned on" is not treated as a failure to retry.
+- **Alternatives:** One shared demo login (visitors would see and change each other's data); SES production access (needs a verified domain, and still sends real email to strangers); a read-only screenshot tour.
+- **Why:** In the SES sandbox nobody but verified addresses can receive a sign-in link, so judges and visitors could not get past the first screen. A per-visitor account keeps the privacy model intact (nobody sees anyone else's data) while showing the whole product, including push reminders, in under a minute.
+
 ## D25. Region choice
 - **Decision:** A region where both Bedrock (with a vision model) and SES are available; us-east-1 by default.
 - **Why:** Avoids last-minute surprises with model availability.

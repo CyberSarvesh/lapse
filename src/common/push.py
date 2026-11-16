@@ -13,6 +13,7 @@ from boto3.dynamodb.conditions import Key
 
 from common.aws_clients import get_dynamodb_table
 from common.db import user_pk
+from common.demo import demo_ttl
 
 logger = logging.getLogger()
 GONE = {404, 410}  # the browser dropped the subscription
@@ -45,6 +46,7 @@ def save_subscription(email: str, endpoint: str, p256dh: str, auth: str, device:
             "auth": auth,
             "device": device[:80],
             "createdAt": int(time.time()),
+            **demo_ttl(email),
         }
     )
 

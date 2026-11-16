@@ -8,6 +8,7 @@ from typing import Any
 
 from common.auth import authenticated_email
 from common.aws_clients import get_s3_client
+from common.demo import demo_ttl
 from common.db import (
     STATUS_PROCESSING,
     item_sk,
@@ -56,6 +57,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             "followUpCount": 0,
             "createdAt": now,
             "updatedAt": now,
+            **demo_ttl(email),
         }
     )
     # How the uploader's locale writes dates, to read 03/04/2027 the right way round.

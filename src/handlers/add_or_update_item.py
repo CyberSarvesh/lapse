@@ -18,6 +18,7 @@ from common.db import (
     utc_now_iso,
 )
 from common.dates import check_future_expiry, lead_days
+from common.demo import demo_ttl
 from common.http import clean_text, json_response, parse_json_body
 
 MAX_NAME = 120  # matches the form's maxlength
@@ -57,6 +58,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "status": STATUS_ACTIVE,
         "followUpCount": 0,
         "leadDays": lead_days(body.get("leadDays", existing.get("leadDays"))),
+        **demo_ttl(email),
         "createdAt": existing.get("createdAt") or now,
         "updatedAt": now,
     }

@@ -178,6 +178,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"sent": True, "devLoginUrl": f"{self._origin()}/?login=dev"})
         elif path == "/auth/verify":
             self._json(200, {"token": SESSION, "email": "you@example.com"})
+        elif path == "/auth/demo":
+            self._json(200, {"token": SESSION, "email": "guest-mock@demo.lapse.invalid", "demo": True})
         elif not self._signed_in():
             return
         elif path == "/auth/logout":

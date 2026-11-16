@@ -24,6 +24,7 @@ from common.aws_clients import get_dynamodb_table
 from common.brand import TYPE_LABELS
 from common.dates import default_lead_days, parse_expiry
 from common.db import STATUS_ACTIVE, list_user_items, user_pk
+from common.demo import demo_ttl
 from common.http import json_response, parse_json_body
 
 FEED_SK = "CALFEED"
@@ -79,8 +80,8 @@ def _get_or_create_link(event: dict[str, Any], method: str) -> dict[str, Any]:
     if current:
         table.delete_item(Key={"PK": _feed_pk(current["tokenHash"]), "SK": "META"})
     token = secrets.token_urlsafe(24)
-    record = {"PK": user_pk(email), "SK": FEED_SK, "token": token, "tokenHash": _hash(token)}
-    table.put_item(Item={"PK": _feed_pk(_hash(token)), "SK": "META", "email": email})
+    record = {"PK": user_pk(email), "SK": FEED_SK, "token": token, "tokenHash": _hash(token), **demo_ttl(email)}
+    table.put_item(Item={"PK": _feed_pk(_hash(token)), "SK": "META", "email": email, **demo_ttl(email)})
     table.put_item(Item=record)
     return json_response(200, _status(event, record))
 
