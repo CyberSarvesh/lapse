@@ -87,7 +87,7 @@ def list_user_items(email: str) -> list[dict[str, Any]]:
     return items
 
 
-def put_upload_lookup(item_id: str, email: str, s3_key: str, ttl_seconds: int = 86400) -> None:
+def put_upload_lookup(item_id: str, email: str, s3_key: str, ttl_seconds: int = 86400, date_order: str = "dmy") -> None:
     """Store a temporary mapping from uploaded itemId to user email (default 1 day TTL)."""
     get_dynamodb_table().put_item(
         Item={
@@ -96,6 +96,7 @@ def put_upload_lookup(item_id: str, email: str, s3_key: str, ttl_seconds: int = 
             "itemId": item_id,
             "email": email.strip().lower(),
             "s3Key": s3_key,
+            "dateOrder": date_order,
             "ttl": int(time.time()) + ttl_seconds,
         }
     )

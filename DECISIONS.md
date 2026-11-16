@@ -102,6 +102,11 @@ Each entry records what was decided, the alternatives, and why. Use this when an
 - **Decision:** The extractor deletes the uploaded file right after reading it, whether extraction worked or not. A 1-day lifecycle rule on `uploads/` is the backstop, and the uploads bucket blocks all public access.
 - **Why:** Lapse only needs the name, provider and date. Not keeping passport and policy photos removes the most sensitive data entirely, and is a promise the page can make plainly. If extraction fails the user types the date (D10), so the file is never needed again.
 
+## D28. Textract OCR as the fallback reader, unlabelled dates need confirming
+- **Decision:** The extractor tries Bedrock first and falls back to Amazon Textract `DetectDocumentText` when Bedrock is unavailable or finds no date. `common/doc_reader.py` turns the OCR lines into an expiry date by scoring every date on the words around it ("valid until", "expiry", "renews on" vs "issued", "date of birth", "purchase"), takes the end of a "from … to …" period, adds a warranty term ("2 years") to the purchase date, and reads 03/04/2027 in the uploader's locale order. A date with no expiry label is stored as `suggestedDate` on a NEEDS_DATE item for the user to confirm; a date already in the past becomes `expiredOn`. The page shrinks photos to a ≤2400px JPEG before upload.
+- **Alternatives:** Waiting for Bedrock model access (blocked on this account); Textract `AnalyzeExpense`/`AnalyzeID` (narrower, dearer); sending the raw OCR text to an LLM (needs Bedrock again).
+- **Why:** The headline feature has to work on a brand-new account. Textract is a plain AWS API with no model-access step, costs about $1.50 per 1,000 pages, and the scoring is deterministic and unit-tested. Asking for confirmation on unlabelled dates keeps a wrong guess from silently scheduling a reminder.
+
 ## D25. Region choice
 - **Decision:** A region where both Bedrock (with a vision model) and SES are available; us-east-1 by default.
 - **Why:** Avoids last-minute surprises with model availability.

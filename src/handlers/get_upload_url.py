@@ -58,7 +58,9 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             "updatedAt": now,
         }
     )
-    put_upload_lookup(item_id, email, s3_key)
+    # How the uploader's locale writes dates, to read 03/04/2027 the right way round.
+    date_order = (params.get("dateOrder") or "dmy").strip().lower()
+    put_upload_lookup(item_id, email, s3_key, date_order=date_order if date_order in ("dmy", "mdy", "ymd") else "dmy")
 
     upload_url = get_s3_client().generate_presigned_url(
         ClientMethod="put_object",

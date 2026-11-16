@@ -9,7 +9,7 @@ Built for the **AWS Weekend Challenge: "No Pipeline, No Problem"**.
 - **Frontend:** Single-page plain HTML app ([web/index.html](web/index.html)) hosted on S3
 - **API:** Amazon API Gateway (HTTP API) + Python 3.13 `arm64` Lambdas
 - **Storage:** Single DynamoDB table (on-demand + TTL) and two S3 buckets (uploads + web)
-- **AI Extraction:** Amazon Bedrock vision model (falls back to `NEEDS_DATE` for manual entry if unreadable)
+- **AI Extraction:** Amazon Bedrock vision model when the account has model access, otherwise Amazon Textract OCR with a scored date finder ([src/common/doc_reader.py](src/common/doc_reader.py)). Unlabelled dates are offered for confirmation; unreadable documents fall back to `NEEDS_DATE`
 - **Scheduler & Human Loop:** AWS Step Functions Standard workflow ([statemachine/lapse.asl.json](statemachine/lapse.asl.json)) using `Wait` states, 300-day continue-as-new splitting, and `waitForTaskToken`
 - **Reminders:** Amazon SES emails with one-time action links and a confirm-before-acting page (`GET /action` → `POST /action`)
 
@@ -44,7 +44,7 @@ python scripts/deploy_web.py --stack-name <your-stack-name>
 The last command uploads `web/index.html` to the stack's web bucket with the API URL filled in and prints the site URL. If your account has S3 Block Public Access turned on at the account level, the bucket policy is rejected; in that case open the page locally with `python scripts/serve_web.py` instead.
 
 Before deploying:
-- Enable model access in Amazon Bedrock for the `BedrockModelId` you use. It must accept image and PDF input (default: Amazon Nova Lite via the `us.` inference profile, about $0.06 per million input tokens, so each document costs a tiny fraction of a cent). If the model can't be called, uploads fall back to "needs a date" and the error is logged in the extractor's CloudWatch logs.
+- Photo reading works out of the box with Amazon Textract (about $1.50 per 1,000 pages). Optionally, enable model access in Amazon Bedrock for the `BedrockModelId` you use; it is tried first. It must accept image and PDF input (default: Amazon Nova Lite via the `us.` inference profile, about $0.06 per million input tokens, so each document costs a tiny fraction of a cent). If the model can't be called, uploads fall back to "needs a date" and the error is logged in the extractor's CloudWatch logs.
 - Verify your `SenderEmail` (and test recipient if in the SES sandbox) in Amazon SES.
 
 For a live demo, set `DemoMode=true` during `sam deploy`.

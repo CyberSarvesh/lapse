@@ -166,6 +166,7 @@ Resources:
             - Effect: Allow
               Action:
                 - bedrock:InvokeModel
+                - textract:DetectDocumentText
               Resource: "*"
             - Effect: Allow
               Action:

@@ -56,3 +56,13 @@ def get_bedrock_client():
         config=Config(read_timeout=40, connect_timeout=5, retries={"max_attempts": 2, "mode": "standard"}),
         **_endpoint_kwargs(),
     )
+
+
+@lru_cache(maxsize=1)
+def get_textract_client():
+    """Return a cached Textract client (OCR fallback when Bedrock can't be used)."""
+    return boto3.client(
+        "textract",
+        config=Config(read_timeout=30, connect_timeout=5, retries={"max_attempts": 2, "mode": "standard"}),
+        **_endpoint_kwargs(),
+    )

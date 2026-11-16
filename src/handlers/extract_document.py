@@ -1,4 +1,4 @@
-"""Extract document metadata and expiry date using Amazon Bedrock (or local fallback)."""
+"""Extract document metadata and expiry date: Amazon Bedrock first, Amazon Textract OCR as the fallback."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from common.aws_clients import get_bedrock_client, get_s3_client
-from common.dates import is_past, parse_expiry
+from common.aws_clients import get_bedrock_client, get_s3_client, get_textract_client
+from common.dates import is_past, parse_expiry, today_utc
+from common.doc_reader import read_document
 from common.db import (
     STATUS_NEEDS_DATE,
     get_item,
@@ -113,6 +114,63 @@ def _bedrock_extract(s3_key: str, body: bytes) -> dict[str, Any]:
     }
 
 
+TEXTRACT_FORMATS = {"jpg", "jpeg", "png", "pdf"}  # synchronous DetectDocumentText (single-page PDF)
+
+
+SMALL_WORDS = {"of", "and", "the", "for", "to", "in", "on", "by"}
+SUFFIXES = {"ltd": "Ltd", "pvt": "Pvt", "inc": "Inc", "co": "Co", "llc": "LLC", "plc": "PLC"}
+
+
+def _tidy(value: str) -> str:
+    """'HDFC ERGO GENERAL INSURANCE COMPANY LTD' -> 'HDFC ERGO General Insurance Company Ltd'."""
+    if not value.isupper():
+        return value
+    words = []
+    for i, word in enumerate(value.split()):
+        bare = word.lower().strip(".,")
+        if bare in SUFFIXES:
+            words.append(word.lower().replace(bare, SUFFIXES[bare]))
+        elif bare in SMALL_WORDS and i:
+            words.append(word.lower())
+        elif len(bare) <= 4 and bare.isalpha():
+            words.append(word)  # likely an acronym or brand: HDFC, ERGO, LIC, AXA
+        else:
+            words.append(word.capitalize())
+    return " ".join(words)
+
+
+def _textract_extract(s3_key: str, body: bytes, date_order: str) -> dict[str, Any]:
+    """OCR the document with Textract and find the expiry date in its text lines."""
+    ext = s3_key.rsplit(".", 1)[-1].lower()
+    if ext not in TEXTRACT_FORMATS:
+        raise ValueError(f"Textract can't read .{ext} files")
+    resp = get_textract_client().detect_document_text(Document={"Bytes": body})
+    lines = [b["Text"] for b in resp.get("Blocks", []) if b.get("BlockType") == "LINE"]
+    reading = read_document(lines, today_utc(), date_order)
+    logger.info("Textract read %d lines; expiry=%s confident=%s", len(lines), reading.expiry or "-", reading.confident)
+    return {
+        "found": reading.found,
+        "confident": reading.confident,
+        "name": _tidy(reading.name)[:120],
+        "type": reading.type,
+        "provider": _tidy(reading.provider)[:80],
+        "expiryDate": reading.expiry,
+    }
+
+
+def _read_document(s3_key: str, body: bytes, date_order: str) -> dict[str, Any]:
+    """Bedrock when the account allows it (it understands layout best), else Textract OCR."""
+    if os.environ.get("BEDROCK_MODEL_ID"):
+        try:
+            result = _bedrock_extract(s3_key, body)
+            if result["found"]:
+                return {**result, "confident": True}
+            logger.info("Bedrock found no expiry date in %s; trying Textract", s3_key)
+        except Exception as err:  # e.g. model access not granted on this account
+            logger.warning("Bedrock unavailable for %s (%s); using Textract", s3_key, err)
+    return _textract_extract(s3_key, body, date_order)
+
+
 def _delete_document(bucket: str, key: str) -> None:
     """Best-effort delete; the uploads bucket lifecycle rule (1 day) is the backstop."""
     try:
@@ -153,7 +211,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         if os.environ.get("LOCAL_MODE") == "true":
             extracted = _local_extract(s3_key, metadata, body)
         else:
-            extracted = _bedrock_extract(s3_key, body)
+            extracted = _read_document(s3_key, body, str(lookup.get("dateOrder") or "dmy"))
     except Exception:
         # Never break the flow (D10), but make the failure visible in CloudWatch.
         logger.exception("Extraction failed for %s; falling back to NEEDS_DATE", s3_key)
@@ -174,6 +232,12 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     # picking up an issue date) must not schedule a reminder for the past: ask
     # the user for the renewed date instead, and show when it expired.
     expired_on = ""
+    suggested = ""
+    if extracted["found"] and not extracted.get("confident", True):
+        # A date with no "expires"/"valid until" label near it is only a guess:
+        # show it to the user to confirm instead of scheduling on it.
+        suggested = extracted["expiryDate"]
+        extracted = {**extracted, "found": False, "expiryDate": ""}
     if extracted["found"]:
         parsed = parse_expiry(extracted["expiryDate"])
         if parsed is None or is_past(parsed):
@@ -195,6 +259,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 "s3Key": "",
                 "status": STATUS_NEEDS_DATE,
                 "expiredOn": expired_on,
+                "suggestedDate": suggested if suggested and not is_past(parse_expiry(suggested)) else "",
                 "followUpCount": 0,
                 "createdAt": existing.get("createdAt") or now,
                 "updatedAt": now,

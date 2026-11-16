@@ -352,6 +352,79 @@ class AuthTests(unittest.TestCase):
             self.assertIsNone(db.get_action_link("x"))
 
 
+class DocumentReaderTests(unittest.TestCase):
+    """OCR text -> expiry date. The labelled expiry wins over issue/birth/purchase dates."""
+
+    def _read(self, lines: list[str], order: str = "dmy"):
+        from datetime import date
+        from common.doc_reader import read_document
+        return read_document(lines, date(2026, 11, 16), order)
+
+    def test_picks_labelled_expiry_over_other_dates(self) -> None:
+        r = self._read(["PASSPORT", "Date of Birth", "05/06/2005", "Date of Issue", "12/01/2022", "Date of Expiry", "11/01/2032"])
+        self.assertEqual((r.expiry, r.confident, r.type), ("2032-01-11", True, "passport"))
+
+    def test_period_from_to_uses_end_date(self) -> None:
+        r = self._read(["ACME GENERAL INSURANCE LTD", "Private Car Package Policy", "From 15/03/2026 to 14/03/2027"])
+        self.assertEqual(r.expiry, "2027-03-14")
+        self.assertEqual(r.name, "Private Car Package Policy")
+
+    def test_warranty_term_is_added_to_purchase_date(self) -> None:
+        r = self._read(["SAMSUNG", "Warranty Card", "Date of Purchase: 03 Feb 2026", "2 year warranty from purchase"])
+        self.assertEqual((r.expiry, r.type), ("2028-02-03", "warranty"))
+
+    def test_month_first_locale_and_card_expiry(self) -> None:
+        self.assertEqual(self._read(["Membership", "Expires 03/04/2027"], "mdy").expiry, "2027-03-04")
+        self.assertEqual(self._read(["Membership", "Expires 03/04/2027"], "dmy").expiry, "2027-04-03")
+        self.assertEqual(self._read(["VALID THRU 08/29"]).expiry, "2029-08-31")
+
+    def test_unlabelled_date_is_only_a_suggestion(self) -> None:
+        r = self._read(["ACME", "Invoice 2026-10-01", "Ref 2027-05-05"])
+        self.assertEqual((r.expiry, r.confident), ("2027-05-05", False))
+        self.assertFalse(self._read(["no dates here"]).found)
+
+    def test_textract_used_when_bedrock_is_blocked(self) -> None:
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"img"), "Metadata": {}}
+        bedrock = MagicMock()
+        bedrock.converse.side_effect = RuntimeError("Operation not allowed")
+        textract = MagicMock()
+        textract.detect_document_text.return_value = {"Blocks": [
+            {"BlockType": "LINE", "Text": "Health Insurance"},
+            {"BlockType": "LINE", "Text": "Policy valid until 30/06/2027"},
+        ]}
+        with (
+            patch.dict(os.environ, {"LOCAL_MODE": "false", "UPLOADS_BUCKET": "uploads", "BEDROCK_MODEL_ID": "m"}),
+            patch("handlers.extract_document.get_upload_lookup", return_value={"email": "a@b.com", "dateOrder": "dmy"}),
+            patch("handlers.extract_document.get_item", return_value={}),
+            patch("handlers.extract_document.get_s3_client", return_value=mock_s3),
+            patch("handlers.extract_document.get_bedrock_client", return_value=bedrock),
+            patch("handlers.extract_document.get_textract_client", return_value=textract),
+            patch("handlers.extract_document.put_item"),
+        ):
+            res = extract_document.handler({"detail": {"bucket": {"name": "uploads"}, "object": {"key": "uploads/t1.jpg"}}}, None)
+        self.assertTrue(res["found"])
+        self.assertEqual((res["expiryDate"], res["type"], res["name"]), ("2027-06-30", "insurance", "Health Insurance"))
+
+    def test_unlabelled_date_is_stored_as_suggestion(self) -> None:
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"img"), "Metadata": {}}
+        textract = MagicMock()
+        textract.detect_document_text.return_value = {"Blocks": [{"BlockType": "LINE", "Text": "Gym 2027-05-05"}]}
+        with (
+            patch.dict(os.environ, {"LOCAL_MODE": "false", "UPLOADS_BUCKET": "uploads", "BEDROCK_MODEL_ID": ""}),
+            patch("handlers.extract_document.get_upload_lookup", return_value={"email": "a@b.com"}),
+            patch("handlers.extract_document.get_item", return_value={}),
+            patch("handlers.extract_document.get_s3_client", return_value=mock_s3),
+            patch("handlers.extract_document.get_textract_client", return_value=textract),
+            patch("handlers.extract_document.put_item") as mock_put,
+        ):
+            res = extract_document.handler({"detail": {"bucket": {"name": "uploads"}, "object": {"key": "uploads/t2.png"}}}, None)
+        self.assertFalse(res["found"])
+        saved = mock_put.call_args[0][0]
+        self.assertEqual((saved["status"], saved["suggestedDate"]), ("NEEDS_DATE", "2027-05-05"))
+
+
 class ExpiryDateTests(unittest.TestCase):
     """An expiry date must be real and not already passed (a reminder for the past is useless)."""
 
