@@ -476,7 +476,7 @@
           <div id="dzIdle">
             <div class="dz-icon" style="margin:0 auto 10px"><svg class="i"><use href="#i-camera"/></svg></div>
             <strong>Snap or drop a document</strong>
-            <div class="muted" style="margin-top:4px">Photo or PDF · JPG, PNG, WEBP, PDF up to 3.5 MB</div>
+            <div class="muted" style="margin-top:4px">Any photo, or a one-page PDF · big photos are shrunk automatically</div>
           </div>
           <div id="dzBusy" class="progress-steps" hidden>
             <div class="pstep" data-step="upload"><span class="pdot"></span><div style="flex:1"><span>Uploading <span id="uploadPct" class="tabular"></span></span><div class="bar-track"><div class="bar-fill" id="uploadBar"></div></div></div></div>
@@ -882,7 +882,14 @@
           <button class="btn sm" type="submit">${button}</button>
         </form>`;
       let needsDate = "";
-      if (item.status === "NEEDS_DATE") {
+      if (item.status === "NEEDS_DATE" && item.suggestedDate) {
+        needsDate = `
+        <form class="item-extra" onsubmit="submitManualDate(event, ${idx})">
+          <span class="muted" style="font-size:13px">We think it expires on <strong>${fmtDate(item.suggestedDate)}</strong>. Is that right?</span>
+          <input class="input" type="date" required min="${todayIso()}" value="${esc(item.suggestedDate)}" aria-label="Expiry date for ${esc(item.name)}">
+          <button class="btn sm" type="submit">${icon("i-check")}Confirm</button>
+        </form>`;
+      } else if (item.status === "NEEDS_DATE") {
         needsDate = item.expiredOn
           ? dateForm(`This document expired on ${fmtDate(item.expiredOn)}. Renewed it? Enter the new expiry date.`, "Save date")
           : dateForm("We couldn't read the date. When does it expire?", "Save date");
@@ -1166,14 +1173,55 @@
       });
     }
 
+    // Phone photos are often 4-8 MB and sometimes WEBP/HEIC. Re-encode images as a
+    // JPEG of at most 2400px on the long edge: small enough to upload fast and in
+    // a format the OCR reads, while keeping small print legible.
+    async function prepareImage(file) {
+      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+      const scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close?.();
+      for (const q of [0.88, 0.75, 0.6]) {
+        const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", q));
+        if (blob && blob.size <= MAX_FILE_BYTES) return blob;
+      }
+      throw new Error("That photo is too large even after shrinking it.");
+    }
+
+    function localeDateOrder() {
+      try {
+        const parts = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "2-digit", day: "2-digit" })
+          .formatToParts(new Date(2000, 10, 22)).filter((p) => ["day", "month", "year"].includes(p.type)).map((p) => p.type[0]);
+        return parts.join("");
+      } catch { return "dmy"; }
+    }
+
     async function uploadFile(file) {
       fileInput.value = "";
       if (uploading || !file) return;
       if (!session()) return;
-      const ext = (file.name.split(".").pop() || "").toLowerCase();
-      const contentType = CONTENT_TYPES[ext] || (file.type === "image/jpeg" ? "image/jpeg" : null);
-      if (!contentType) { toast("Use a JPG, PNG, WEBP or PDF file.", "error"); return; }
-      if (file.size > MAX_FILE_BYTES) { toast("That file is over 3.5 MB. Try a smaller photo.", "error"); return; }
+      let ext = (file.name.split(".").pop() || "").toLowerCase();
+      const isPdf = ext === "pdf" || file.type === "application/pdf";
+      if (!isPdf) {
+        if (!file.type.startsWith("image/") && !CONTENT_TYPES[ext]) { toast("Use a photo (JPG, PNG, WEBP) or a PDF.", "error"); return; }
+        try {
+          file = await prepareImage(file);
+          ext = "jpg";
+        } catch (err) {
+          if (!CONTENT_TYPES[ext] || file.size > MAX_FILE_BYTES) {
+            toast(err.message.startsWith("That photo") ? err.message : "This photo format can't be opened here. Try a JPG or PNG.", "error");
+            return;
+          }
+        }
+      } else ext = "pdf";
+      const contentType = CONTENT_TYPES[ext];
+      if (file.size > MAX_FILE_BYTES) { toast("That PDF is over 3.5 MB. Try a photo of the page instead.", "error"); return; }
 
       uploading = true;
       dropzone.classList.add("busy");
@@ -1184,7 +1232,7 @@
       $("doneText").textContent = "Reminder scheduled";
       setStep("upload", "doing"); setStep("read", ""); setStep("done", "");
       try {
-        const resp = await apiFetch(`/upload-url?ext=${encodeURIComponent(ext === "jpeg" ? "jpg" : ext)}`);
+        const resp = await apiFetch(`/upload-url?ext=${encodeURIComponent(ext === "jpeg" ? "jpg" : ext)}&dateOrder=${localeDateOrder()}`);
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || "Couldn't start the upload");
         await putWithProgress(data.uploadUrl, file, contentType);
@@ -1204,10 +1252,14 @@
       if (!item || item.status === "PROCESSING") return;
       watchingId = null;
       setStep("read", item.status === "NEEDS_DATE" ? "fail" : "done");
-      if (item.status === "NEEDS_DATE") {
+      if (item.status === "NEEDS_DATE" && item.suggestedDate) {
         setStep("done", "fail");
-        $("doneText").textContent = "Couldn't read the date — add it below";
-        toast("We couldn't read the date. Add it in the list.", "error");
+        $("doneText").textContent = `Is it ${fmtDate(item.suggestedDate)}? Confirm it below`;
+        toast(`We think it expires ${fmtDate(item.suggestedDate)}. Confirm it in the list.`);
+      } else if (item.status === "NEEDS_DATE") {
+        setStep("done", "fail");
+        $("doneText").textContent = item.expiredOn ? `It expired ${fmtDate(item.expiredOn)} — add the new date below` : "Couldn't read the date — add it below";
+        toast(item.expiredOn ? "That document has already expired. Add the renewed date." : "We couldn't find a date. Add it in the list.", "error");
       } else {
         setStep("done", "done");
         $("doneText").textContent = `${item.name} · expires ${fmtDate(item.expiryDate)}`;
