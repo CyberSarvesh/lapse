@@ -117,6 +117,11 @@ Each entry records what was decided, the alternatives, and why. Use this when an
 - **Alternatives:** Several reminders per item (more workflow state for little gain over follow-ups); per-item .ics downloads only (go stale when dates change); Google Calendar API sync (OAuth and one provider only).
 - **Why:** Different things need different notice (a passport months ahead, a subscription days ahead). A subscribed feed keeps every calendar app current with no account linking, and it is a second channel when email lands in Spam. Calendar apps can't send a sign-in header, so the unguessable, revocable URL is the credential.
 
+## D31. Browser push notifications as a second reminder channel
+- **Decision:** Reminders go out by email and by Web Push to every device the user turned on. `common/webpush.py` implements RFC 8291 (aes128gcm) and RFC 8292 (VAPID) on `cryptography`, shipped in a Lambda layer built by `scripts/build_push_layer.py`. The VAPID private key lives in SSM as a SecureString (`scripts/setup_push.py`); only the public key is a stack parameter and baked into the page. Subscriptions are stored per user (`PUSH#<hash>`), only for real push-service hosts, and dropped when the service answers 404/410. The reminder step fails (and retries) only if neither channel delivered. Sign-out unsubscribes the device. The page, service worker, manifest and icons are all served from the API origin (D29).
+- **Alternatives:** A verified domain for email (costs money, and SES sandbox still limits recipients); SMS via SNS (per-message cost, sandbox); a push SaaS (another account, sends user data to a third party); the `pywebpush` library (pulls in `requests`, `py-vapid`, more layer weight).
+- **Why:** Email from an unverified sender lands in Spam, and in the SES sandbox it can't reach unverified addresses at all. Push needs no domain, never lands in Spam, costs nothing, and works for any user who taps "Allow". Encryption was checked against the reference `http_ece` decoder, and Google's push service accepted messages from the deployed Lambda (201).
+
 ## D25. Region choice
 - **Decision:** A region where both Bedrock (with a vision model) and SES are available; us-east-1 by default.
 - **Why:** Avoids last-minute surprises with model availability.

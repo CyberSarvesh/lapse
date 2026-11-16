@@ -1,15 +1,20 @@
-"""Create one-time action links and send a reminder email via Amazon SES."""
+"""Create one-time action links and send the reminder by email (SES) and browser push."""
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 from typing import Any
 
+from common import push
 from common.aws_clients import get_ses_client
-from common.brand import e, email_button, email_html, email_item_card, nice_date
+from common.brand import countdown, e, email_button, email_html, email_item_card, nice_date
 from common.dates import days_until, describe_expiry
 from common.db import put_action_link
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def _app_url() -> str:
@@ -82,14 +87,41 @@ def handler(event: dict[str, Any], _context: Any) -> None:
         f"Open Lapse: {app_url}\n"
     )
 
-    get_ses_client().send_email(
-        Source=os.environ["SENDER_EMAIL"],
-        Destination={"ToAddresses": [email]},
-        Message={
-            "Subject": {"Data": subject, "Charset": "UTF-8"},
-            "Body": {
-                "Text": {"Data": text_body, "Charset": "UTF-8"},
-                "Html": {"Data": html_body, "Charset": "UTF-8"},
+    # Email and push are independent channels: one failing (e.g. SES sandbox
+    # refusing an unverified address) must not stop the other. Only when
+    # nothing got out does the step fail, so the workflow retries.
+    email_error: Exception | None = None
+    try:
+        get_ses_client().send_email(
+            Source=os.environ["SENDER_EMAIL"],
+            Destination={"ToAddresses": [email]},
+            Message={
+                "Subject": {"Data": subject, "Charset": "UTF-8"},
+                "Body": {
+                    "Text": {"Data": text_body, "Charset": "UTF-8"},
+                    "Html": {"Data": html_body, "Charset": "UTF-8"},
+                },
             },
-        },
-    )
+        )
+    except Exception as err:  # noqa: BLE001 - reported below if push also fails
+        email_error = err
+        logger.warning("Reminder email to %s failed: %s", item_id, err)
+
+    pushed = 0
+    try:
+        big, small, _ = countdown(expiry_date)
+        pushed = push.notify(email, {
+            "title": heading,
+            "body": " · ".join(x for x in (provider, f"{big} {small}" if big not in ("Expired", "Today") else small, nice_date(expiry_date)) if x),
+            "tag": f"lapse-{item_id}",
+            "url": app_url,
+            "renewUrl": renew_url,
+            "snoozeUrl": snooze_url,
+            "actions": [{"action": "renew", "title": "I renewed it"}, {"action": "snooze", "title": "Remind me in 7 days"}],
+        }, subject=app_url)
+    except Exception:  # noqa: BLE001
+        logger.exception("Reminder push for %s failed", item_id)
+
+    logger.info("Reminder %s: email %s, push to %d device(s)", item_id, "failed" if email_error else "sent", pushed)
+    if email_error and not pushed:
+        raise email_error

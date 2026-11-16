@@ -12,6 +12,7 @@ Built for the **AWS Weekend Challenge: "No Pipeline, No Problem"**.
 - **AI Extraction:** Amazon Bedrock vision model when the account has model access, otherwise Amazon Textract OCR with a scored date finder ([src/common/doc_reader.py](src/common/doc_reader.py)). Unlabelled dates are offered for confirmation; unreadable documents fall back to `NEEDS_DATE`
 - **Scheduler & Human Loop:** AWS Step Functions Standard workflow ([statemachine/lapse.asl.json](statemachine/lapse.asl.json)) using `Wait` states, 300-day continue-as-new splitting, and `waitForTaskToken`
 - **Reminders:** Amazon SES emails with one-time action links and a confirm-before-acting page (`GET /action` → `POST /action`)
+- **Push notifications:** Web Push (VAPID) to every device the user turns on, so reminders arrive even when email goes to Spam; the email and push channels back each other up
 - **Reminder timing & calendar:** each item chooses when the first reminder goes out (1 day to 3 months before), and a private, revocable iCalendar feed (`/calendar/<token>.ics`) puts every expiry date into Google, Apple or Outlook Calendar
 
 ## Local Development (LocalStack)
@@ -49,6 +50,17 @@ Before deploying:
 - Verify your `SenderEmail` (and test recipient if in the SES sandbox) in Amazon SES.
 
 For a live demo, set `DemoMode=true` during `sam deploy`.
+
+### Browser notifications (optional, recommended)
+
+```bash
+python scripts/setup_push.py --region us-east-1      # once: creates the key in SSM, prints VapidPublicKey=...
+python scripts/build_push_layer.py --arch arm64      # before each deploy: Lambda layer with `cryptography`
+sam deploy ... --parameter-overrides VapidPublicKey=<printed key>
+python scripts/deploy_web.py --stack-name <your-stack-name>
+```
+
+Then sign in and press **Turn on** under "This device". On iPhone, add Lapse to the Home Screen first (Share → Add to Home Screen); iOS only allows notifications for installed web apps.
 
 ## Privacy and sign-in
 

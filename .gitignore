@@ -20,3 +20,6 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# Built by scripts/build_push_layer.py
+layers/push/python/

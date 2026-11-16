@@ -554,7 +554,7 @@ class CalendarFeedTests(unittest.TestCase):
 class WebPageTests(unittest.TestCase):
     def test_serves_page_from_private_bucket_with_security_headers(self) -> None:
         from handlers import web_page
-        web_page._cache.update(html=None, at=0.0)
+        web_page._cache.clear()
         s3 = MagicMock()
         s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"<!doctype html><h1>Lapse</h1>")}
         with patch.dict(os.environ, {"WEB_BUCKET": "web"}), patch("handlers.web_page.get_s3_client", return_value=s3):

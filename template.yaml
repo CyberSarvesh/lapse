@@ -34,6 +34,14 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: Serve the page through CloudFront (new AWS accounts must be verified by AWS Support first). Otherwise it is served over HTTPS by the API itself.
+  VapidPublicKey:
+    Type: String
+    Default: ""
+    Description: Web Push public key from scripts/setup_push.py. Empty turns browser notifications off.
+  VapidPrivateKeyParam:
+    Type: String
+    Default: /lapse/vapid-private-key
+    Description: SSM SecureString holding the Web Push private key (created by scripts/setup_push.py)
   AppUrl:
     Type: String
     Default: ""
@@ -51,6 +59,7 @@ Conditions:
   IsLocal: !Equals [!Ref LocalMode, "true"]
   # LocalStack has no CloudFront: locally the bucket stays a public S3 website.
   UseCdn: !And [!Not [!Condition IsLocal], !Equals [!Ref EnableCdn, "true"]]
+  HasPush: !Not [!Equals [!Ref VapidPublicKey, ""]]
   NeedsWebBucketPolicy: !Or [!Condition IsLocal, !Condition UseCdn]
 
 Globals:
@@ -255,8 +264,11 @@ Resources:
     Properties:
       Handler: handlers.send_reminder.handler
       CodeUri: src/
+      Layers: !If [HasPush, [!Ref PushLayer], !Ref AWS::NoValue]
       Environment:
         Variables:
+          VAPID_PUBLIC_KEY: !Ref VapidPublicKey
+          VAPID_PRIVATE_KEY_PARAM: !Ref VapidPrivateKeyParam
           API_BASE_URL: !Sub "https://${LapseApi}.execute-api.${AWS::Region}.amazonaws.com"
           APP_URL: !If
             - HasAppUrl
@@ -267,6 +279,11 @@ Resources:
               # Empty: the handler uses the API's own HTTPS address, which serves the page.
               - !If [IsLocal, !GetAtt WebBucket.WebsiteURL, ""]
       Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              # VapidPrivateKeyParam starts with "/", e.g. /lapse/vapid-private-key
+              Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${VapidPrivateKeyParam}"
         - DynamoDBCrudPolicy:
             TableName: !Ref LapseTable
         - SESCrudPolicy:
@@ -408,6 +425,83 @@ Resources:
             ApiId: !Ref LapseApi
             Path: /
             Method: GET
+        ServiceWorker:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /sw.js
+            Method: GET
+        Manifest:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /manifest.webmanifest
+            Method: GET
+        Icon192:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /icon-192.png
+            Method: GET
+        Icon512:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /icon-512.png
+            Method: GET
+        AppleTouchIcon:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /apple-touch-icon.png
+            Method: GET
+
+  # cryptography for Web Push, built by scripts/build_push_layer.py (D31)
+  PushLayer:
+    Type: AWS::Serverless::LayerVersion
+    Condition: HasPush
+    Properties:
+      ContentUri: layers/push/
+      CompatibleRuntimes: [python3.13]
+      CompatibleArchitectures: [!Ref LambdaArchitecture]
+
+  PushFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.push.handler
+      CodeUri: src/
+      Layers: !If [HasPush, [!Ref PushLayer], !Ref AWS::NoValue]
+      Environment:
+        Variables:
+          VAPID_PUBLIC_KEY: !Ref VapidPublicKey
+          VAPID_PRIVATE_KEY_PARAM: !Ref VapidPrivateKeyParam
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LapseTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              # VapidPrivateKeyParam starts with "/", e.g. /lapse/vapid-private-key
+              Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${VapidPrivateKeyParam}"
+      Events:
+        Subscribe:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /push/subscribe
+            Method: POST
+        Unsubscribe:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /push/unsubscribe
+            Method: POST
+        TestPush:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /push/test
+            Method: POST
 
   CalendarFeedFunction:
     Type: AWS::Serverless::Function
@@ -571,6 +665,9 @@ Outputs:
       - UseCdn
       - !Sub "https://${WebDistribution.DomainName}"
       - !If [IsLocal, !GetAtt WebBucket.WebsiteURL, !Sub "https://${LapseApi}.execute-api.${AWS::Region}.amazonaws.com/"]
+  VapidPublicKey:
+    Description: Web Push public key baked into the page (empty = push off)
+    Value: !Ref VapidPublicKey
   WebDistributionId:
     Condition: UseCdn
     Description: CloudFront distribution serving the web app
