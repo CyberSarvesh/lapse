@@ -63,6 +63,17 @@ def main() -> None:
             common,
         )
     print(f"Uploaded index.html to s3://{bucket} (API: {api_url})")
+    if outputs.get("WebDistributionId"):
+        # Drop CloudFront's cached copy so the new page is served right away.
+        aws(
+            [
+                "cloudfront", "create-invalidation",
+                "--distribution-id", outputs["WebDistributionId"],
+                "--paths", "/", "/index.html",
+            ],
+            common,
+        )
+        print("Refreshed the CloudFront cache")
     if "WebUrl" in outputs:
         print(f"Open: {outputs['WebUrl']}")
 

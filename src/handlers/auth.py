@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import logging
 import os
+import re
 from typing import Any
 from urllib.parse import urlencode
 
@@ -25,10 +26,24 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def _sign_in_url(token: str) -> str:
-    # The link target is fixed by deployment config, never taken from the request,
-    # so nobody can make Lapse email a sign-in link that points at their own site.
-    return f"{os.environ['APP_URL'].rstrip('/')}/?{urlencode({'login': token})}"
+def _app_url(event: dict[str, Any]) -> str:
+    """Where the sign-in link points: deploy config, else this API's own HTTPS address.
+
+    Never a value the caller controls. ``requestContext.domainName`` is set by API
+    Gateway to the API's own domain (execute-api or a mapped custom domain), not
+    copied from the Host header, so nobody can make Lapse email a link to their site.
+    """
+    configured = os.environ.get("APP_URL", "").strip()
+    if configured:
+        return configured.rstrip("/")
+    domain = (event.get("requestContext") or {}).get("domainName", "")
+    if not re.fullmatch(r"[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com", domain):
+        raise RuntimeError("APP_URL is not configured")
+    return f"https://{domain}"
+
+
+def _sign_in_url(event: dict[str, Any], token: str) -> str:
+    return f"{_app_url(event)}/?{urlencode({'login': token})}"
 
 
 def _send_sign_in_email(email: str, url: str) -> None:
@@ -66,7 +81,7 @@ def _start(event: dict[str, Any]) -> dict[str, Any]:
     # Same answer whether or not we actually sent, so the endpoint can't be used
     # to probe who uses Lapse or to flood someone's inbox.
     if allow_login_email(email):
-        url = _sign_in_url(create_login_token(email))
+        url = _sign_in_url(event, create_login_token(email))
         _send_sign_in_email(email, url)
         if os.environ.get("LOCAL_MODE") == "true":
             body["devLoginUrl"] = url  # LocalStack doesn't deliver mail

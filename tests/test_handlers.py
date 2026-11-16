@@ -320,6 +320,26 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(sent["Destination"], {"ToAddresses": ["a@b.com"]})
         self.assertIn("https://app.example/?login=tok", sent["Message"]["Body"]["Text"]["Data"])
 
+    def test_without_app_url_link_uses_the_apis_own_https_domain(self) -> None:
+        ses = MagicMock()
+        start = lambda domain: auth.handler(  # noqa: E731
+            {"rawPath": "/auth/start", "body": json.dumps({"email": "a@b.com"}), "requestContext": {"domainName": domain}}, None
+        )
+        with (
+            patch.dict(os.environ, {"APP_URL": "", "SENDER_EMAIL": "no@reply", "LOCAL_MODE": "false"}),
+            patch("handlers.auth.allow_login_email", return_value=True),
+            patch("handlers.auth.create_login_token", return_value="tok"),
+            patch("handlers.auth.get_ses_client", return_value=ses),
+        ):
+            start("abc123.execute-api.us-east-1.amazonaws.com")
+            self.assertIn("https://abc123.execute-api.us-east-1.amazonaws.com/?login=tok",
+                          ses.send_email.call_args.kwargs["Message"]["Body"]["Text"]["Data"])
+            ses.reset_mock()
+            # Anything that isn't an API Gateway domain is refused, never emailed.
+            with self.assertRaises(RuntimeError):
+                start("evil.example.com")
+            ses.send_email.assert_not_called()
+
     def test_start_is_throttled_without_revealing_it(self) -> None:
         ses = MagicMock()
         with (
@@ -423,6 +443,22 @@ class DocumentReaderTests(unittest.TestCase):
         self.assertFalse(res["found"])
         saved = mock_put.call_args[0][0]
         self.assertEqual((saved["status"], saved["suggestedDate"]), ("NEEDS_DATE", "2027-05-05"))
+
+
+class WebPageTests(unittest.TestCase):
+    def test_serves_page_from_private_bucket_with_security_headers(self) -> None:
+        from handlers import web_page
+        web_page._cache.update(html=None, at=0.0)
+        s3 = MagicMock()
+        s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"<!doctype html><h1>Lapse</h1>")}
+        with patch.dict(os.environ, {"WEB_BUCKET": "web"}), patch("handlers.web_page.get_s3_client", return_value=s3):
+            res = web_page.handler({}, None)
+            web_page.handler({}, None)  # second request is served from memory
+        self.assertEqual(res["statusCode"], 200)
+        self.assertIn("<h1>Lapse</h1>", res["body"])
+        self.assertIn("max-age", res["headers"]["Strict-Transport-Security"])
+        self.assertEqual(res["headers"]["X-Frame-Options"], "DENY")
+        s3.get_object.assert_called_once_with(Bucket="web", Key="index.html")
 
 
 class ExpiryDateTests(unittest.TestCase):

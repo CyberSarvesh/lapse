@@ -107,6 +107,11 @@ Each entry records what was decided, the alternatives, and why. Use this when an
 - **Alternatives:** Waiting for Bedrock model access (blocked on this account); Textract `AnalyzeExpense`/`AnalyzeID` (narrower, dearer); sending the raw OCR text to an LLM (needs Bedrock again).
 - **Why:** The headline feature has to work on a brand-new account. Textract is a plain AWS API with no model-access step, costs about $1.50 per 1,000 pages, and the scoring is deterministic and unit-tested. Asking for confirmation on unlabelled dates keeps a wrong guess from silently scheduling a reminder.
 
+## D29. The page is served over HTTPS from a private bucket
+- **Decision:** On AWS the web bucket is private. A small Lambda on the API's `GET /` route serves `index.html` from it with HSTS, nosniff, frame-deny and a strict referrer policy, so the app lives at the API's HTTPS address and page and API share one origin. Sign-in links point there (taken from API Gateway's `requestContext.domainName`, which must be an execute-api domain) unless `AppUrl` overrides it. `EnableCdn=true` serves the page through CloudFront with Origin Access Control instead. In `LocalMode` the bucket stays a public S3 website because LocalStack has no CloudFront.
+- **Alternatives:** The S3 website endpoint (HTTP only, browsers mark it "Not secure"); CloudFront by default (refused on new accounts until AWS Support verifies them); Amplify Hosting (another service and build step).
+- **Why:** Sign-in links carry a token, so the page must not travel in clear text, and a public bucket was the last public-by-policy resource. Serving from the API needs no extra service or verification, costs a Lambda call per page load, and still allows CloudFront and a custom domain later.
+
 ## D25. Region choice
 - **Decision:** A region where both Bedrock (with a vision model) and SES are available; us-east-1 by default.
 - **Why:** Avoids last-minute surprises with model availability.

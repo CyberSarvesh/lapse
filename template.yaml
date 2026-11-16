@@ -29,6 +29,11 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: Enable local fallback for Bedrock when running in LocalStack
+  EnableCdn:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Serve the page through CloudFront (new AWS accounts must be verified by AWS Support first). Otherwise it is served over HTTPS by the API itself.
   AppUrl:
     Type: String
     Default: ""
@@ -43,6 +48,10 @@ Parameters:
 
 Conditions:
   HasAppUrl: !Not [!Equals [!Ref AppUrl, ""]]
+  IsLocal: !Equals [!Ref LocalMode, "true"]
+  # LocalStack has no CloudFront: locally the bucket stays a public S3 website.
+  UseCdn: !And [!Not [!Condition IsLocal], !Equals [!Ref EnableCdn, "true"]]
+  NeedsWebBucketPolicy: !Or [!Condition IsLocal, !Condition UseCdn]
 
 Globals:
   Function:
@@ -108,31 +117,93 @@ Resources:
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
 
+  # On AWS the bucket is private and the page is served over HTTPS, by the API
+  # (GET /) or, with EnableCdn, by CloudFront (D29). Locally it is a public S3
+  # website, since LocalStack has no CloudFront.
   WebBucket:
     Type: AWS::S3::Bucket
     Properties:
-      WebsiteConfiguration:
-        IndexDocument: index.html
-      # New buckets block public access by default; the static site must be readable.
-      # (If your account-level Block Public Access is on, open web/index.html locally instead.)
+      WebsiteConfiguration: !If
+        - IsLocal
+        - IndexDocument: index.html
+        - !Ref AWS::NoValue
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         IgnorePublicAcls: true
-        BlockPublicPolicy: false
-        RestrictPublicBuckets: false
+        BlockPublicPolicy: !If [IsLocal, false, true]
+        RestrictPublicBuckets: !If [IsLocal, false, true]
 
   WebBucketPolicy:
     Type: AWS::S3::BucketPolicy
+    Condition: NeedsWebBucketPolicy
     Properties:
       Bucket: !Ref WebBucket
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: PublicReadForStaticSite
-            Effect: Allow
-            Principal: "*"
-            Action: s3:GetObject
-            Resource: !Sub "${WebBucket.Arn}/*"
+          - !If
+            - IsLocal
+            - Sid: PublicReadForStaticSite
+              Effect: Allow
+              Principal: "*"
+              Action: s3:GetObject
+              Resource: !Sub "${WebBucket.Arn}/*"
+            - Sid: CloudFrontReadOnly
+              Effect: Allow
+              Principal:
+                Service: cloudfront.amazonaws.com
+              Action: s3:GetObject
+              Resource: !Sub "${WebBucket.Arn}/*"
+              Condition:
+                StringEquals:
+                  AWS:SourceArn: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${WebDistribution}"
+
+  WebOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: UseCdn
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-web"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  WebDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: UseCdn
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "Lapse web app (${AWS::StackName})"
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: web
+            DomainName: !GetAtt WebBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: web
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          Compress: true
+          # Managed "CachingOptimized"; index.html is uploaded with no-cache and
+          # deploy_web.py invalidates it, so new versions show up at once.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          # Managed "SecurityHeadersPolicy": HSTS, nosniff, frame DENY, strict referrer.
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 60
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 60
 
   # ---------------------------------------------------------------------------
   # HTTP API Gateway (D18)
@@ -277,7 +348,14 @@ Resources:
       CodeUri: src/
       Environment:
         Variables:
-          APP_URL: !If [HasAppUrl, !Ref AppUrl, !GetAtt WebBucket.WebsiteURL]
+          APP_URL: !If
+            - HasAppUrl
+            - !Ref AppUrl
+            - !If
+              - UseCdn
+              - !Sub "https://${WebDistribution.DomainName}"
+              # Empty: the handler uses the API's own HTTPS address, which serves the page.
+              - !If [IsLocal, !GetAtt WebBucket.WebsiteURL, ""]
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LapseTable
@@ -302,6 +380,26 @@ Resources:
             ApiId: !Ref LapseApi
             Path: /auth/logout
             Method: POST
+
+  WebPageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.web_page.handler
+      CodeUri: src/
+      MemorySize: 128
+      Environment:
+        Variables:
+          WEB_BUCKET: !Ref WebBucket
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref WebBucket
+      Events:
+        WebRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LapseApi
+            Path: /
+            Method: GET
 
   GetUploadUrlFunction:
     Type: AWS::Serverless::Function
@@ -418,5 +516,12 @@ Outputs:
     Description: S3 bucket for static frontend
     Value: !Ref WebBucket
   WebUrl:
-    Description: S3 static website URL
-    Value: !GetAtt WebBucket.WebsiteURL
+    Description: Address of the web app (HTTPS on AWS)
+    Value: !If
+      - UseCdn
+      - !Sub "https://${WebDistribution.DomainName}"
+      - !If [IsLocal, !GetAtt WebBucket.WebsiteURL, !Sub "https://${LapseApi}.execute-api.${AWS::Region}.amazonaws.com/"]
+  WebDistributionId:
+    Condition: UseCdn
+    Description: CloudFront distribution serving the web app
+    Value: !Ref WebDistribution
